@@ -25,6 +25,7 @@ import edu.boun.edgecloudsim.mobility.MobilityModel;
 import edu.boun.edgecloudsim.mobility.NomadicMobility;
 import edu.boun.edgecloudsim.task_generator.IdleActiveLoadGenerator;
 import edu.boun.edgecloudsim.task_generator.LoadGeneratorModel;
+import edu.boun.edgecloudsim.task_generator.EmptyLoadGenerator;
 import edu.boun.edgecloudsim.network.MM1Queue;
 import edu.boun.edgecloudsim.network.NetworkModel;
 
@@ -59,11 +60,13 @@ public class SampleScenarioFactory implements ScenarioFactory {
 	
 	/**
 	 * Creates load generator model for task generation patterns.
-	 * @return IdleActiveLoadGenerator with idle/active periods for realistic workload
+	 * Returns EmptyLoadGenerator to disable synthetic tasks (DAG tasks only).
+	 * @return EmptyLoadGenerator that produces no synthetic tasks
 	 */
 	@Override
 	public LoadGeneratorModel getLoadGeneratorModel() {
-		return new IdleActiveLoadGenerator(numOfMobileDevice, simulationTime, simScenario);
+		// Use EmptyLoadGenerator to disable synthetic tasks and run DAGs only
+		return new EmptyLoadGenerator(numOfMobileDevice, simulationTime, simScenario);
 	}
 
 	/**
