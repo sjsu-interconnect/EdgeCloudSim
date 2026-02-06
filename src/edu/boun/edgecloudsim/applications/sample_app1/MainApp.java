@@ -22,6 +22,11 @@ import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
 import edu.boun.edgecloudsim.utils.SimLogger;
 import edu.boun.edgecloudsim.utils.SimUtils;
+import edu.boun.edgecloudsim.dagsim.DagJsonLoader;
+import edu.boun.edgecloudsim.dagsim.DagRecord;
+import edu.boun.edgecloudsim.dagsim.DagRuntimeManager;
+import java.util.List;
+import java.io.IOException;
 
 public class MainApp {
 	
@@ -121,7 +126,17 @@ public class MainApp {
 						
 						// Create EdgeCloudSim simulation manager
 						SimManager manager = new SimManager(sampleFactory, j, simScenario, orchestratorPolicy);
-						
+						// If DAGs are present, load and register DagRuntimeManager so DAG tasks are submitted
+						try {
+							List<DagRecord> dags = DagJsonLoader.loadAllDags("src/edu/boun/edgecloudsim/dagsim");
+							if (dags != null && !dags.isEmpty()) {
+								DagRuntimeManager dagManager = new DagRuntimeManager("DagRuntime", dags);
+								dagManager.scheduleAllDagSubmissions();
+							}
+						} catch (IOException ioe) {
+							SimLogger.printLine("Warning: could not load DAGs: " + ioe.getMessage());
+						}
+
 						// Execute the simulation
 						manager.startSimulation();
 					}
