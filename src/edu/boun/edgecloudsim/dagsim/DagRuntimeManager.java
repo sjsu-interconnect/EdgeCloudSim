@@ -30,6 +30,11 @@ public class DagRuntimeManager extends SimEntity {
     // Registry to track which DAG tasks we've sent to SimManager
     // Maps (dagId, taskId) -> (lengthMi, mobileDeviceId, startTime) for reverse lookup
     private Map<String, Map<String, long[]>> dagTaskRegistry = new HashMap<>();
+    // Map from CloudSim cloudlet id -> { dagId, taskId }
+    private Map<Long, String[]> cloudletToDagMap = new HashMap<>();
+
+    // Singleton instance for global callbacks
+    private static DagRuntimeManager instance = null;
 
     private PrintWriter taskLogWriter;
     private PrintWriter dagLogWriter;
@@ -47,7 +52,10 @@ public class DagRuntimeManager extends SimEntity {
         }
         writeTaskLogHeader();
         writeDagLogHeader();
+        instance = this;
     }
+
+    public static DagRuntimeManager getInstance(){ return instance; }
 
     @Override
     public void startEntity() {
@@ -85,13 +93,13 @@ public class DagRuntimeManager extends SimEntity {
 
         System.out.println("[" + String.format("%.2f", CloudSim.clock()) + "] DAG submitted: " + dag.getDagId() + " with " + dag.getTotalTasks() + " tasks");
 
-        // Queue all tasks that have no dependencies as ready
-        // (In a real DAG scheduler, we'd respect dependencies, but for MVP we'll send all tasks immediately)
+        // Queue only root tasks (no remaining dependencies) as READY
         for (TaskRecord task : dag.getTasksById().values()) {
-            task.setReadyTimeMs(submitTime);
-            task.setState(TaskRecord.TaskState.READY);
-            // Send TASK_READY event with a slight delay to avoid event ordering issues
-            CloudSim.send(getId(), this.getId(), Math.random() * 0.001, TASK_READY, task);
+            if (task.getRemainingDeps() == 0) {
+                task.setReadyTimeMs(submitTime);
+                task.setState(TaskRecord.TaskState.READY);
+                CloudSim.send(getId(), this.getId(), Math.random() * 0.001, TASK_READY, task);
+            }
         }
     }
 
@@ -137,19 +145,58 @@ public class DagRuntimeManager extends SimEntity {
         int taskHashCode = task.getTaskId().hashCode();
         int mobileDeviceId = Math.abs(taskHashCode) % numDevices;
 
-        // Create TaskProperty with estimated sizes and MI
-        TaskProperty tp = new TaskProperty(readyTime, mobileDeviceId, taskTypeIdx, pes, lengthMi, inputBytes, outputBytes);
+        // Create TaskProperty with estimated sizes and MI, attach DAG identifiers
+        TaskProperty tp = new TaskProperty(readyTime, mobileDeviceId, taskTypeIdx, pes, lengthMi, inputBytes, outputBytes, dagId, task.getTaskId());
 
         // Register this task in our DAG task registry so we can track it when it completes
         dagTaskRegistry.computeIfAbsent(dagId, k -> new HashMap<>())
             .put(task.getTaskId(), new long[]{lengthMi, mobileDeviceId, (long)(readyTime * 1000.0)});
 
+        // Send as CREATE_TASK event to SimManager (CREATE_TASK tag = 0)
+
         // Log scheduling estimate
         System.out.println(String.format("[%.2f] Task ready: %s of DAG %s — lengthMI=%d, execEdge=%.3fs, execCloud=%.3fs, in=%dB out=%dB",
             CloudSim.clock(), task.getTaskId(), dagId, lengthMi, execSecEdge, execSecCloud, inputBytes, outputBytes));
 
-        // Send as CREATE_TASK event to SimManager (CREATE_TASK tag = 0)
         CloudSim.send(getId(), SimManager.getInstance().getId(), 0.0, 0, tp);
+    }
+
+    /**
+     * Register mapping from CloudSim cloudlet id to DAG identifiers so we can
+     * find the corresponding TaskRecord when the cloudlet finishes.
+     */
+    public void registerCloudletMapping(long cloudletId, String dagId, String taskId){
+        if(dagId != null && taskId != null){
+            cloudletToDagMap.put(cloudletId, new String[]{dagId, taskId});
+        }
+    }
+
+    /**
+     * Called by external components when a cloudlet finishes. This looks up the
+     * DAG task and forwards to the internal completion handler.
+     */
+    public void onTaskCloudletFinished(long cloudletId, double finishClock){
+        String[] ids = cloudletToDagMap.get(cloudletId);
+        if(ids == null) return; // not a DAG task
+
+        String dagId = ids[0];
+        String taskId = ids[1];
+
+        DagRecord dag = activeDags.get(dagId);
+        if(dag == null){
+            // maybe it was moved to completed list; try allDags
+            for(DagRecord d : allDags){ if(d.getDagId().equals(dagId)){ dag = d; break; } }
+        }
+        if(dag == null) return;
+
+        TaskRecord task = dag.getTask(taskId);
+        if(task == null) return;
+
+        // Mark finish time and call internal handler
+        task.setFinishTimeMs(finishClock * 1000.0);
+        processTaskFinished(task);
+        // cleanup mapping
+        cloudletToDagMap.remove(cloudletId);
     }
 
     private void processTaskFinished(TaskRecord task) {

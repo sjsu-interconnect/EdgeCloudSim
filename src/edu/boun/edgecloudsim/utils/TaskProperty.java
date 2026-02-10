@@ -66,6 +66,9 @@ public class TaskProperty {
 	
 	/** ID of the mobile device that will generate this task */
 	private int mobileDeviceId;
+	// Optional DAG linkage (set when a TaskProperty originates from a DAG task)
+	private String dagId = null;
+	private String dagTaskId = null;
 
 	/**
 	 * Constructs a TaskProperty with explicitly specified parameters.
@@ -91,6 +94,16 @@ public class TaskProperty {
 		length = _length;
 		inputFileSize = _inputFileSize;
 		outputFileSize = _outputFileSize;
+	}
+
+	/**
+	 * Extended constructor that carries DAG identifiers so the runtime can map
+	 * finished cloudlets back to DAG tasks.
+	 */
+	public TaskProperty(double _startTime, int _mobileDeviceId, int _taskType, int _pesNumber, long _length, long _inputFileSize, long _outputFileSize, String _dagId, String _dagTaskId) {
+		this(_startTime, _mobileDeviceId, _taskType, _pesNumber, _length, _inputFileSize, _outputFileSize);
+		this.dagId = _dagId;
+		this.dagTaskId = _dagTaskId;
 	}
 
 	/**
@@ -254,4 +267,10 @@ public class TaskProperty {
 	public int getMobileDeviceId(){
 		return mobileDeviceId;
 	}
+
+	/** Returns DAG id associated with this task (if any) */
+	public String getDagId(){ return dagId; }
+
+	/** Returns DAG task id associated with this task (if any) */
+	public String getDagTaskId(){ return dagTaskId; }
 }

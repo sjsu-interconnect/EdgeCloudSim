@@ -29,6 +29,7 @@ import edu.boun.edgecloudsim.network.NetworkModel;
 import edu.boun.edgecloudsim.utils.TaskProperty;
 import edu.boun.edgecloudsim.utils.Location;
 import edu.boun.edgecloudsim.utils.SimLogger;
+import edu.boun.edgecloudsim.dagsim.DagRuntimeManager;
 
 /**
  * Default implementation of MobileDeviceManager for standard edge computing scenarios.
@@ -188,6 +189,10 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 				
 				// Log task completion
 				SimLogger.getInstance().taskEnded(task.getCloudletId(), CloudSim.clock());
+				// Notify DAG runtime manager (if present) that this cloudlet finished
+				if(DagRuntimeManager.getInstance() != null){
+					DagRuntimeManager.getInstance().onTaskCloudletFinished(task.getCloudletId(), CloudSim.clock());
+				}
 				break;
 			}
 			default:
@@ -208,6 +213,13 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 		
 		// Create EdgeCloudSim task from task properties
 		Task task = createTask(edgeTask);
+
+		// If this TaskProperty originated from a DAG, register mapping from cloudletId -> DAG task
+		if(edgeTask.getDagId() != null && edgeTask.getDagTaskId() != null){
+			if(DagRuntimeManager.getInstance() != null){
+				DagRuntimeManager.getInstance().registerCloudletMapping(task.getCloudletId(), edgeTask.getDagId(), edgeTask.getDagTaskId());
+			}
+		}
 		
 		// Get current location of the mobile device
 		Location currentLocation = SimManager.getInstance().getMobilityModel().
