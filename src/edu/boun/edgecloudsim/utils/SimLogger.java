@@ -212,6 +212,8 @@ public class SimLogger {
 	private int[] failedTaskDueToVmCapacityOnMobile = null;
 	
 	private double[] cost = null;
+	private double[] bwCostTotal = null;  // Track bandwidth cost separately
+	private double[] cpuCostTotal = null;  // Track CPU cost separately
 	private double[] QoE = null;
 	private int[] failedTaskDuetoBw = null;
 	private int[] failedTaskDuetoLanBw = null;
@@ -306,6 +308,16 @@ public class SimLogger {
 	 */
 	public String getOutputFolder() {
 		return outputFolder;
+	}
+	
+	/**
+	 * Returns the task map for accessing detailed task log items.
+	 * Used for setting cost and QoE metrics during task completion.
+	 * 
+	 * @return the map of task IDs to LogItem objects
+	 */
+	public Map<Integer, LogItem> getTaskMap() {
+		return taskMap;
 	}
 
 	/**
@@ -438,6 +450,8 @@ public class SimLogger {
 		failedTaskDueToVmCapacityOnMobile = new int[numOfAppTypes + 1];
 		
 		cost = new double[numOfAppTypes + 1];
+		bwCostTotal = new double[numOfAppTypes + 1];  // Initialize bandwidth cost tracking
+		cpuCostTotal = new double[numOfAppTypes + 1];  // Initialize CPU cost tracking
 		QoE = new double[numOfAppTypes + 1];
 		failedTaskDuetoBw = new int[numOfAppTypes + 1];
 		failedTaskDuetoLanBw = new int[numOfAppTypes + 1];
@@ -606,6 +620,17 @@ public class SimLogger {
 	 */
 	public void setQoE(int taskId, double QoE){
 		taskMap.get(taskId).setQoE(QoE);
+	}
+	
+	/**
+	 * Records task execution cost (bandwidth + CPU).
+	 * 
+	 * @param taskId unique identifier for the task
+	 * @param bwCost bandwidth cost in dollars
+	 * @param cpuCost CPU execution cost in dollars
+	 */
+	public void setCost(int taskId, double bwCost, double cpuCost){
+		taskMap.get(taskId).setCost(bwCost, cpuCost);
 	}
 	
 	/**
@@ -778,6 +803,8 @@ public class SimLogger {
 		failedTaskDueToVmCapacityOnMobile[numOfAppTypes] = IntStream.of(failedTaskDueToVmCapacityOnMobile).sum();
 		
 		cost[numOfAppTypes] = DoubleStream.of(cost).sum();
+		bwCost[numOfAppTypes] = DoubleStream.of(bwCost).sum();
+		cpuCost[numOfAppTypes] = DoubleStream.of(cpuCost).sum();
 		QoE[numOfAppTypes] = DoubleStream.of(QoE).sum();
 		failedTaskDuetoBw[numOfAppTypes] = IntStream.of(failedTaskDuetoBw).sum();
 		failedTaskDuetoGsmBw[numOfAppTypes] = IntStream.of(failedTaskDuetoGsmBw).sum();
@@ -851,6 +878,8 @@ public class SimLogger {
 				double _vmLoadOnClould = (vmLoadList.size() == 0) ? 0.0 : (totalVmLoadOnCloud / (double) vmLoadList.size());
 				double _vmLoadOnMobile = (vmLoadList.size() == 0) ? 0.0 : (totalVmLoadOnMobile / (double) vmLoadList.size());
 				double _cost = (completedTask[i] == 0) ? 0.0 : (cost[i] / (double) completedTask[i]);
+				double _bwCost = (completedTask[i] == 0) ? 0.0 : (bwCost[i] / (double) completedTask[i]);
+				double _cpuCost = (completedTask[i] == 0) ? 0.0 : (cpuCost[i] / (double) completedTask[i]);
 				double _QoE1 = (completedTask[i] == 0) ? 0.0 : (QoE[i] / (double) completedTask[i]);
 				double _QoE2 = (completedTask[i] == 0) ? 0.0 : (QoE[i] / (double) (failedTask[i] + completedTask[i]));
 
@@ -873,6 +902,8 @@ public class SimLogger {
 						+ Double.toString(_networkDelay) + SimSettings.DELIMITER
 						+ Double.toString(0) + SimSettings.DELIMITER 
 						+ Double.toString(_cost) + SimSettings.DELIMITER 
+						+ Double.toString(_bwCost) + SimSettings.DELIMITER
+						+ Double.toString(_cpuCost) + SimSettings.DELIMITER
 						+ Integer.toString(failedTaskDueToVmCapacity[i]) + SimSettings.DELIMITER 
 						+ Integer.toString(failedTaskDuetoMobility[i]) + SimSettings.DELIMITER 
 						+ Double.toString(_QoE1) + SimSettings.DELIMITER 
@@ -1073,10 +1104,17 @@ public class SimLogger {
 				+ String.format("%.6f", totalVmLoadOnCloud / (double) vmLoadList.size()) + "/"
 				+ String.format("%.6f", totalVmLoadOnMobile / (double) vmLoadList.size()));
 
-		printLine("average cost: " + cost[numOfAppTypes] / completedTask[numOfAppTypes] + "$");
-		printLine("average overhead: " + orchestratorOverhead[numOfAppTypes] / (failedTask[numOfAppTypes] + completedTask[numOfAppTypes]) + " ns");
-		printLine("average QoE (for all): " + QoE[numOfAppTypes] / (failedTask[numOfAppTypes] + completedTask[numOfAppTypes]) + "%");
-		printLine("average QoE (for executed): " + QoE[numOfAppTypes] / completedTask[numOfAppTypes] + "%");
+		double avgCost = completedTask[numOfAppTypes] > 0 ? cost[numOfAppTypes] / completedTask[numOfAppTypes] : 0.0;
+		double avgBwCost = completedTask[numOfAppTypes] > 0 ? bwCost[numOfAppTypes] / completedTask[numOfAppTypes] : 0.0;
+		double avgCpuCost = completedTask[numOfAppTypes] > 0 ? cpuCost[numOfAppTypes] / completedTask[numOfAppTypes] : 0.0;
+		double avgOverhead = (failedTask[numOfAppTypes] + completedTask[numOfAppTypes]) > 0 ? orchestratorOverhead[numOfAppTypes] / (failedTask[numOfAppTypes] + completedTask[numOfAppTypes]) : 0.0;
+		double avgQoeAll = (failedTask[numOfAppTypes] + completedTask[numOfAppTypes]) > 0 ? QoE[numOfAppTypes] / (failedTask[numOfAppTypes] + completedTask[numOfAppTypes]) : 0.0;
+		double avgQoeExecuted = completedTask[numOfAppTypes] > 0 ? QoE[numOfAppTypes] / completedTask[numOfAppTypes] : 0.0;
+
+		printLine("average cost: " + String.format("%.6f", avgCost) + "$ (bw: " + String.format("%.6f", avgBwCost) + "$, cpu: " + String.format("%.6f", avgCpuCost) + "$)");
+		printLine("average overhead: " + String.format("%.2f", avgOverhead) + " ns");
+		printLine("average QoE (for all): " + String.format("%.2f", avgQoeAll) + "%");
+		printLine("average QoE (for executed): " + String.format("%.2f", avgQoeExecuted) + "%");
 
 		// clear related collections (map list etc.)
 		taskMap.clear();
@@ -1136,6 +1174,8 @@ public class SimLogger {
 
 		if (value.getStatus() == SimLogger.TASK_STATUS.COMLETED) {
 			cost[value.getTaskType()] += value.getCost();
+			bwCostTotal[value.getTaskType()] += value.getBwCost();  // Track BW cost
+			cpuCostTotal[value.getTaskType()] += value.getCpuCost();  // Track CPU cost
 			QoE[value.getTaskType()] += value.getQoE();
 			serviceTime[value.getTaskType()] += value.getServiceTime();
 			networkDelay[value.getTaskType()] += value.getNetworkDelay();
@@ -1520,6 +1560,14 @@ class LogItem {
 
 	public double getCost() {
 		return bwCost + cpuCost;
+	}
+	
+	public double getBwCost() {
+		return bwCost;
+	}
+	
+	public double getCpuCost() {
+		return cpuCost;
 	}
 
 	public double getQoE() {

@@ -13,21 +13,19 @@
 
 package edu.boun.edgecloudsim.core;
 
+import edu.boun.edgecloudsim.utils.SimLogger;
+import edu.boun.edgecloudsim.utils.SimUtils;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
-
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
-
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
-
-import edu.boun.edgecloudsim.utils.SimLogger;
 
 /**
  * Singleton class providing system-wide simulation settings for EdgeCloudSim.
@@ -116,6 +114,10 @@ public class SimSettings {
 	// Mobility model configuration - mean waiting time (minutes) for each place type
 	private double[] mobilityLookUpTable;
 
+	// Optional RNG seed for deterministic simulations
+	private long rngSeed;
+	private boolean rngSeedSet = false;
+
 	/** 
 	 * Application task lookup table storing parameters for each application type defined in applications.xml
 	 * Array indices represent different application characteristics:
@@ -179,6 +181,20 @@ public class SimSettings {
 			Properties prop = new Properties();
 			prop.load(input);
 
+			// Immediately apply RNG seed if provided in properties to ensure determinism
+			String rngSeedPropImmediate = prop.getProperty("rng_seed");
+			if(rngSeedPropImmediate != null && !rngSeedPropImmediate.isEmpty()){
+				try{
+					long seedVal = Long.parseLong(rngSeedPropImmediate);
+					SimUtils.setSeed(seedVal);
+					// also store locally for getters
+					rngSeed = seedVal;
+					rngSeedSet = true;
+				} catch(Exception e){
+					rngSeedSet = false;
+				}
+			}
+
 			SIMULATION_TIME = (double)60 * Double.parseDouble(prop.getProperty("simulation_time")); //seconds
 			WARM_UP_PERIOD = (double)60 * Double.parseDouble(prop.getProperty("warm_up_period")); //seconds
 			INTERVAL_TO_GET_VM_LOAD_LOG = (double)60 * Double.parseDouble(prop.getProperty("vm_load_check_interval")); //seconds
@@ -233,6 +249,14 @@ public class SimSettings {
 					place3_mean_waiting_time  //ATTRACTIVENESS_L3
 			};
 
+			// Optional RNG seed for deterministic simulations. If absent, runs remain non-deterministic.
+			String rngSeedProp = prop.getProperty("rng_seed");
+			if(rngSeedProp != null && !rngSeedProp.isEmpty()){
+				try{ rngSeed = Long.parseLong(rngSeedProp); rngSeedSet = true; }catch(Exception e){ rngSeedSet = false; }
+			} else {
+				rngSeedSet = false;
+			}
+
 
 		} catch (IOException ex) {
 			ex.printStackTrace();
@@ -251,6 +275,16 @@ public class SimSettings {
 
 		return result;
 	}
+
+	/**
+	 * Returns true if an RNG seed was provided in the configuration.
+	 */
+	public boolean hasRngSeed(){ return rngSeedSet; }
+
+	/**
+	 * Gets the RNG seed value (only valid if hasRngSeed() == true).
+	 */
+	public long getRngSeed(){ return rngSeed; }
 
 	/**
 	 * returns the parsed XML document for edge_devices.xml

@@ -38,6 +38,7 @@ public class DagRuntimeManager extends SimEntity {
 
     private PrintWriter taskLogWriter;
     private PrintWriter dagLogWriter;
+    private long totalDagRunTimeMs = 0;  // Track total runtime across all DAGs
 
     public DagRuntimeManager(String name, List<DagRecord> dags) {
         super(name);
@@ -98,7 +99,9 @@ public class DagRuntimeManager extends SimEntity {
             if (task.getRemainingDeps() == 0) {
                 task.setReadyTimeMs(submitTime);
                 task.setState(TaskRecord.TaskState.READY);
-                CloudSim.send(getId(), this.getId(), Math.random() * 0.001, TASK_READY, task);
+                // Use zero delay for task readiness to avoid nondeterministic jitter
+                // (ordering differences cause different queueing outcomes).
+                CloudSim.send(getId(), this.getId(), 0.0, TASK_READY, task);
             }
         }
     }
@@ -232,7 +235,9 @@ public class DagRuntimeManager extends SimEntity {
         if (dag.isComplete()) {
             dag.setState(DagRecord.DagState.COMPLETE);
             dag.setCompleteTimeMs(finishTime);
-            System.out.println("[" + String.format("%.2f", CloudSim.clock()) + "] DAG complete: " + dagId + " Makespan: " + String.format("%.2f", dag.getMakespanMs()) + " ms");
+            long makespanMs = (long) dag.getMakespanMs();
+            totalDagRunTimeMs += makespanMs;  // Accumulate total runtime
+            System.out.println("[" + String.format("%.2f", CloudSim.clock()) + "] DAG complete: " + dagId + " Makespan: " + String.format("%.2f", (double)makespanMs) + " ms");
             logDagCompletion(dag);
             activeDags.remove(dagId);
         }
@@ -261,6 +266,15 @@ public class DagRuntimeManager extends SimEntity {
                     System.err.println("Error logging DAG " + dag.getDagId() + ": " + e.getMessage());
                 }
             }
+            
+            // Print total DAG runtime summary
+            System.out.println("\n========== DAG EXECUTION SUMMARY ==========");
+            System.out.println("Total DAGs submitted: " + allDags.size());
+            System.out.println("Total DAG runtime (sum of makespans): " + totalDagRunTimeMs + " ms");
+            if(allDags.size() > 0) {
+                System.out.println("Average DAG makespan: " + (totalDagRunTimeMs / (double)allDags.size()) + " ms");
+            }
+            System.out.println("==========================================");
         } catch (Exception e) {
             System.err.println("Error in DAG shutdown: " + e.getMessage());
         } finally {

@@ -187,8 +187,38 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 				else if(task.getAssociatedDatacenterId() != SimSettings.MOBILE_DATACENTER_ID)
 					networkModel.downloadFinished(task.getSubmittedLocation(), SimSettings.GENERIC_EDGE_DEVICE_ID);
 				
-				// Log task completion
+				// Calculate cost metrics before logging task completion
+				double taskServiceTime = CloudSim.clock() - task.getSubmissionTime();
+				
+				// Bandwidth cost: (upload + download) * cost_per_byte
+				double bwCostPerByte = 0.00001; // $0.01 per GB
+				double totalBytes = task.getCloudletFileSize() + task.getCloudletOutputSize();
+				double bwCost = totalBytes * bwCostPerByte;
+				
+				// CPU cost: execution_time * cost_per_second
+				double cpuCostPerSecond = (task.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID) 
+					? 0.05 // Cloud: $0.05/sec
+					: 0.02; // Edge: $0.02/sec
+				double cpuCost = Math.max(0, taskServiceTime * cpuCostPerSecond);
+				
+				// Set cost in SimLogger (before taskEnded to include in aggregation)
+				SimLogger.getInstance().setCost(task.getCloudletId(), bwCost, cpuCost);
+				
+				// Calculate QoE (Quality of Experience)
+				double maxDelayRequirement = 10.0; // Default 10 seconds
+				double delaySensitivity = 0.5; // Default 50% sensitivity to delay
+				double qoe = 100.0; // Start at perfect QoE
+				
+				if(maxDelayRequirement > 0 && taskServiceTime > maxDelayRequirement){
+					// Degrade QoE based on delay overage
+					double delayRatio = (taskServiceTime - maxDelayRequirement) / maxDelayRequirement;
+					qoe = 100.0 * Math.max(0, 1.0 - (delayRatio * delaySensitivity));
+				}
+				SimLogger.getInstance().setQoE(task.getCloudletId(), qoe);
+				
+				// Log task completion (this aggregates all metrics including cost and QoE)
 				SimLogger.getInstance().taskEnded(task.getCloudletId(), CloudSim.clock());
+				
 				// Notify DAG runtime manager (if present) that this cloudlet finished
 				if(DagRuntimeManager.getInstance() != null){
 					DagRuntimeManager.getInstance().onTaskCloudletFinished(task.getCloudletId(), CloudSim.clock());

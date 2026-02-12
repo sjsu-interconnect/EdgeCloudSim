@@ -78,6 +78,12 @@ public class MainApp {
 			SimLogger.printLine("cannot initialize simulation settings!");
 			System.exit(0);
 		}
+
+		// If an RNG seed is provided in the config, apply it to the shared RNG
+		if(SS.hasRngSeed()){
+			SimUtils.setSeed(SS.getRngSeed());
+			SimLogger.printLine("Deterministic RNG seed set to: " + SS.getRngSeed());
+		}
 		
 		// DEBUG: Log actual device configuration read from file
 		SimLogger.printLine("DEBUG: Config loaded - Min devices: " + SS.getMinNumOfMobileDev() + ", Max devices: " + SS.getMaxNumOfMobileDev() + ", Counter size: " + SS.getMobileDevCounterSize());
