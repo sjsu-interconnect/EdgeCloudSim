@@ -254,6 +254,9 @@ public class SimLogger {
 	/** Array storing orchestration overhead measurements per application type */
 	private double[] orchestratorOverhead = null;
 
+	/** Total number of completed DAGs for per-DAG cost calculation */
+	private int completedDagCount = 0;
+
 	/**
 	 * Private constructor implementing Singleton pattern.
 	 * 
@@ -703,6 +706,13 @@ public class SimLogger {
 	 */
 	public void setOrchestratorOverhead(int taskId, double overhead) {
 		taskMap.get(taskId).setOrchestratorOverhead(overhead);
+	}
+
+	/**
+	 * Increments the internal completed DAG counter for per-DAG results.
+	 */
+	public void addCompletedDag() {
+		completedDagCount++;
 	}
 
 	/**
@@ -1184,6 +1194,7 @@ public class SimLogger {
 				+ String.format("%.6f", totalVmLoadOnMobile / (double) vmLoadList.size()));
 
 		double avgCost = completedTask[numOfAppTypes] > 0 ? cost[numOfAppTypes] / completedTask[numOfAppTypes] : 0.0;
+		double avgCostPerDag = completedDagCount > 0 ? cost[numOfAppTypes] / (double) completedDagCount : 0.0;
 		double avgBwCost = completedTask[numOfAppTypes] > 0 ? bwCost[numOfAppTypes] / completedTask[numOfAppTypes]
 				: 0.0;
 		double avgCpuCost = completedTask[numOfAppTypes] > 0 ? cpuCost[numOfAppTypes] / completedTask[numOfAppTypes]
@@ -1197,8 +1208,13 @@ public class SimLogger {
 		double avgQoeExecuted = completedTask[numOfAppTypes] > 0 ? QoE[numOfAppTypes] / completedTask[numOfAppTypes]
 				: 0.0;
 
-		printLine("average cost: " + String.format("%.6f", avgCost) + "$ (bw: " + String.format("%.6f", avgBwCost)
+		printLine("Total scheduling cost for simulation window: " + String.format("%.6f", cost[numOfAppTypes]) + "$");
+		printLine("average cost (per task): " + String.format("%.6f", avgCost) + "$ (bw: "
+				+ String.format("%.6f", avgBwCost)
 				+ "$, cpu: " + String.format("%.6f", avgCpuCost) + "$)");
+		if (completedDagCount > 0) {
+			printLine("average cost (per DAG): " + String.format("%.6f", avgCostPerDag) + "$");
+		}
 		printLine("average overhead: " + String.format("%.2f", avgOverhead) + " ns");
 		printLine("average QoE (for all): " + String.format("%.2f", avgQoeAll) + "%");
 		printLine("average QoE (for executed): " + String.format("%.2f", avgQoeExecuted) + "%");

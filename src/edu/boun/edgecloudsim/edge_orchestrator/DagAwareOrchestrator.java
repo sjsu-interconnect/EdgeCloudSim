@@ -64,9 +64,11 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         TaskContext context = new TaskContext();
         context.taskId = String.valueOf(task.getCloudletId());
         context.dagId = task.getDagId();
+        context.taskType = SimSettings.getInstance().getTaskName(task.getTaskType());
         context.lengthMI = task.getCloudletLength();
         context.cpuMemoryMb = SimSettings.getInstance().getRamForMobileVM(); // Approximation
         context.gpuMemoryMb = 0; // Default
+        context.gpuUtilizationPercent = 0;
         context.readyTimeMs = task.getSubmissionTime() * 1000.0;
         context.currentTimeMs = CloudSim.clock() * 1000.0;
 

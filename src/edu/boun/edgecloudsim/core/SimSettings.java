@@ -117,6 +117,7 @@ public class SimSettings {
 	private String[] SIMULATION_SCENARIOS;
 	private String[] ORCHESTRATOR_POLICIES;
 	private String RL_SERVICE_URL;
+	private double DAG_INTERARRIVAL_RATE;
 
 	// Geographic simulation boundaries
 	private double NORTHERN_BOUND;
@@ -249,6 +250,7 @@ public class SimSettings {
 
 			SIMULATION_SCENARIOS = prop.getProperty("simulation_scenarios").split(",");
 			RL_SERVICE_URL = prop.getProperty("rl_service_url", "http://localhost:5000/decide");
+			DAG_INTERARRIVAL_RATE = Double.parseDouble(prop.getProperty("dag_interarrival_rate", "60.0"));
 
 			NORTHERN_BOUND = Double.parseDouble(prop.getProperty("northern_bound", "0"));
 			SOUTHERN_BOUND = Double.parseDouble(prop.getProperty("southern_bound", "0"));
@@ -580,6 +582,10 @@ public class SimSettings {
 		return RL_SERVICE_URL;
 	}
 
+	public double getDagInterarrivalRate() {
+		return DAG_INTERARRIVAL_RATE;
+	}
+
 	public double getNorthernBound() {
 		return NORTHERN_BOUND;
 	}
@@ -642,18 +648,27 @@ public class SimSettings {
 	 */
 	public double[] getTaskProperties(String taskName) {
 		double[] result = null;
-		int index = -1;
-		for (int i = 0; i < taskNames.length; i++) {
-			if (taskNames[i].equals(taskName)) {
-				index = i;
-				break;
-			}
-		}
+		int index = getTaskTypeIndex(taskName);
 
 		if (index >= 0 && index < taskLookUpTable.length)
 			result = taskLookUpTable[index];
 
 		return result;
+	}
+
+	/**
+	 * Returns the index of a specific application type by name.
+	 * 
+	 * @param taskName Name of the application type
+	 * @return Index of the task type, or -1 if not found
+	 */
+	public int getTaskTypeIndex(String taskName) {
+		for (int i = 0; i < taskNames.length; i++) {
+			if (taskNames[i].equals(taskName)) {
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	/**

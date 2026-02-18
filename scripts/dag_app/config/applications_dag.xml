@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <applications>
-	<application name="SD_BASE_MODEL_LOAD">
+	<application name="base_model_load">
 		<usage_percentage>1</usage_percentage>
 		<prob_cloud_selection>20</prob_cloud_selection>
 		<poisson_interarrival>60</poisson_interarrival>
@@ -15,7 +15,7 @@
 		<vm_utilization_on_cloud>8</vm_utilization_on_cloud>
 		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
 	</application>
-	<application name="SD_LORA_LOAD">
+	<application name="lora_load">
 		<usage_percentage>5</usage_percentage>
 		<prob_cloud_selection>25</prob_cloud_selection>
 		<poisson_interarrival>60</poisson_interarrival>
@@ -30,7 +30,7 @@
 		<vm_utilization_on_cloud>6</vm_utilization_on_cloud>
 		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
 	</application>
-	<application name="SD_CONTROLNET_LOAD">
+	<application name="controlnet_load">
 		<usage_percentage>5</usage_percentage>
 		<prob_cloud_selection>30</prob_cloud_selection>
 		<poisson_interarrival>60</poisson_interarrival>
@@ -45,7 +45,7 @@
 		<vm_utilization_on_cloud>7</vm_utilization_on_cloud>
 		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
 	</application>
-	<application name="SD_VAE_ENCODE">
+	<application name="vae_encode">
 		<usage_percentage>5</usage_percentage>
 		<prob_cloud_selection>35</prob_cloud_selection>
 		<poisson_interarrival>10</poisson_interarrival>
@@ -60,7 +60,7 @@
 		<vm_utilization_on_cloud>20</vm_utilization_on_cloud>
 		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
 	</application>
-	<application name="SD_UNET_DENOISE">
+	<application name="unet_denoise">
 		<usage_percentage>70</usage_percentage>
 		<prob_cloud_selection>80</prob_cloud_selection>
 		<poisson_interarrival>1</poisson_interarrival>
@@ -75,7 +75,7 @@
 		<vm_utilization_on_cloud>85</vm_utilization_on_cloud>
 		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
 	</application>
-	<application name="SD_SAMPLER_STEP">
+	<application name="sampler">
 		<usage_percentage>10</usage_percentage>
 		<prob_cloud_selection>70</prob_cloud_selection>
 		<poisson_interarrival>1</poisson_interarrival>
@@ -90,7 +90,7 @@
 		<vm_utilization_on_cloud>35</vm_utilization_on_cloud>
 		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
 	</application>
-	<application name="SD_VAE_DECODE">
+	<application name="vae_decode">
 		<usage_percentage>4</usage_percentage>
 		<prob_cloud_selection>35</prob_cloud_selection>
 		<poisson_interarrival>10</poisson_interarrival>

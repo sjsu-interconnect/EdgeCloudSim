@@ -145,19 +145,26 @@ public class DagRuntimeManager extends SimEntity {
         double execSecCloud = lengthMi / (double) ss.getMipsForCloudVM();
         double execSecEdge = lengthMi / (double) ss.getMipsForMobileVM();
 
-        // Estimate input/output sizes from DAG metadata heuristically
-        long inputBytes;
-        if (task.getGpuMemoryMb() > 0) {
-            inputBytes = (long) (task.getGpuMemoryMb() * 1024.0 * 1024.0 * 0.5); // 50% of GPU memory as proxy
-        } else {
-            inputBytes = (long) (task.getMemoryMb() * 1024.0 * 1024.0 * 0.2); // 20% of memory as proxy
+        int taskTypeIdx = ss.getTaskTypeIndex(task.getTaskType());
+        if (taskTypeIdx == -1) {
+            System.err.println("WARNING: Task type " + task.getTaskType()
+                    + " not found in applications XML. Using default index 0.");
+            taskTypeIdx = 0;
         }
+
+        // Get realistic input/output sizes from applications XML (KB to Bytes)
+        double[] appProps = ss.getTaskLookUpTable()[taskTypeIdx];
+        long inputBytes = (long) (appProps[5] * 1024.0);
+        long outputBytes = (long) (appProps[6] * 1024.0);
+
+        // Fallback for safety
         if (inputBytes <= 0)
-            inputBytes = 1024; // at least 1KB
-        long outputBytes = Math.max(1024L, (long) (inputBytes * 0.1));
+            inputBytes = 1024;
+        if (outputBytes <= 0)
+            outputBytes = 1024;
 
         int pes = 1;
-        int taskTypeIdx = 0; // default
+
         // Map DAG task to a real mobile device (round-robin across 0 to numDevices-1)
         // This ensures the task is submitted with a valid device ID for mobility lookup
         int numDevices = SimSettings.getInstance().getMaxNumOfMobileDev();
@@ -269,6 +276,8 @@ public class DagRuntimeManager extends SimEntity {
             System.out.println("[" + String.format("%.2f", CloudSim.clock()) + "] DAG complete: " + dagId
                     + " Makespan: " + String.format("%.2f", (double) makespanMs) + " ms");
             logDagCompletion(dag);
+            edu.boun.edgecloudsim.utils.SimLogger.getInstance().addCompletedDag(); // Track DAG completion for cost
+                                                                                   // summary
             activeDags.remove(dagId);
         }
     }

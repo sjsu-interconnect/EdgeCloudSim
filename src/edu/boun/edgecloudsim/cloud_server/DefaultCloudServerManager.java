@@ -172,9 +172,14 @@ public class DefaultCloudServerManager extends CloudServerManager {
 		datacenter = new Datacenter(name, characteristics, vm_policy, storageList, 0);
 
 		// Register cloud datacenter costs in SimSettings
-		// Using slightly higher costs for cloud by default (representing public cloud
-		// pricing)
-		SimSettings.datacenterCosts.put(datacenter.getId(), new Double[] { 0.00001, 0.05, 0.001, 0.0001 });
+		// Using realistic public cloud pricing (e.g., $0.75/hour for GPU compute and
+		// low egress)
+		SimSettings.datacenterCosts.put(datacenter.getId(), new Double[] {
+				0.00000000009, // costPerBw ($0.09 per GB)
+				0.0002083333, // costPerSec ($0.75 per hour)
+				0.0, // costPerMem
+				0.0 // costPerStorage
+		});
 
 		return datacenter;
 	}

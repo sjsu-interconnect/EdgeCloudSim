@@ -190,13 +190,21 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 				// Calculate cost metrics before logging task completion
 				double taskServiceTime = CloudSim.clock() - task.getSubmissionTime();
 
-				// Extract cost parameters from the centralized registry in SimSettings
-				Double[] costs = SimSettings.datacenterCosts.get(task.getAssociatedDatacenterId());
+				// Map associated DC ID to actual entity ID if it's a symbolic placeholder
+				int datacenterId = task.getAssociatedDatacenterId();
+				if (datacenterId == SimSettings.CLOUD_DATACENTER_ID) {
+					datacenterId = SimManager.getInstance().getCloudServerManager().getDatacenter().getId();
+				} else if (datacenterId == SimSettings.GENERIC_EDGE_DEVICE_ID) {
+					// For generic edge, we pick the cost from the first edge datacenter as a proxy
+					datacenterId = SimManager.getInstance().getEdgeServerManager().getDatacenterList().get(0).getId();
+				}
 
-				// Fallback to default values if datacenter is not registered (should not
-				// happen)
-				double costPerBw = (costs != null) ? costs[0] : 0.00001;
-				double costPerSec = (costs != null) ? costs[1] : 0.02;
+				// Extract cost parameters from the centralized registry in SimSettings
+				Double[] costs = SimSettings.datacenterCosts.get(datacenterId);
+
+				// Fallback to sensible default values if datacenter is still not registered
+				double costPerBw = (costs != null) ? costs[0] : 0.00000000009; // Default cloud egress rate
+				double costPerSec = (costs != null) ? costs[1] : 0.0002083333; // Default cloud compute rate
 				double costPerMem = (costs != null) ? costs[2] : 0.0;
 				double costPerStorage = (costs != null) ? costs[3] : 0.0;
 
