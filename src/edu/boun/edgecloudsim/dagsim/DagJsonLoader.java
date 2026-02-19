@@ -147,6 +147,14 @@ public class DagJsonLoader {
             dag.setHasControlnet(dagJson.get("has_controlnet").getAsBoolean());
         }
 
+        // Set application name based on components
+        String appName = "Stable Diffusion";
+        if (dag.isHasLora())
+            appName += " LoRA";
+        if (dag.isHasControlnet())
+            appName += " ControlNet";
+        dag.setApplicationName(appName);
+
         // Load tasks
         JsonArray tasksJson = dagJson.getAsJsonArray("tasks");
         Map<String, TaskRecord> tasksById = new HashMap<>();

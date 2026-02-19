@@ -13,6 +13,8 @@ import java.util.Map;
 import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
 import edu.boun.edgecloudsim.utils.TaskProperty;
+import edu.boun.edgecloudsim.utils.SimLogger;
+import edu.boun.edgecloudsim.edge_client.Task;
 
 /**
  * Concrete DagRuntimeManager that integrates DAG tasks into EdgeCloudSim
@@ -103,8 +105,11 @@ public class DagRuntimeManager extends SimEntity {
         dag.setState(DagRecord.DagState.SUBMITTED);
         activeDags.put(dag.getDagId(), dag);
 
-        System.out.println("[" + String.format("%.2f", CloudSim.clock()) + "] DAG submitted: " + dag.getDagId()
-                + " with " + dag.getTotalTasks() + " tasks");
+        System.out.println(String.format("[%s] [%.2f] DAG submitted: %s with %d tasks",
+                dag.getApplicationName(),
+                CloudSim.clock(),
+                dag.getDagId(),
+                dag.getTotalTasks()));
 
         // Queue only root tasks (no remaining dependencies) as READY
         for (TaskRecord task : dag.getTasksById().values()) {
@@ -183,9 +188,10 @@ public class DagRuntimeManager extends SimEntity {
         // Send as CREATE_TASK event to SimManager (CREATE_TASK tag = 0)
 
         // Log scheduling estimate
+        String appName = (dag != null) ? dag.getApplicationName() : "Unknown_App";
         System.out.println(String.format(
-                "[%.2f] Task ready: %s of DAG %s — lengthMI=%d, execEdge=%.3fs, execCloud=%.3fs, in=%dB out=%dB",
-                CloudSim.clock(), task.getTaskId(), dagId, lengthMi, execSecEdge, execSecCloud, inputBytes,
+                "[%s] [%.2f] Task ready: %s of DAG %s — lengthMI=%d, execEdge=%.3fs, execCloud=%.3fs, in=%dB out=%dB",
+                appName, CloudSim.clock(), task.getTaskId(), dagId, lengthMi, execSecEdge, execSecCloud, inputBytes,
                 outputBytes));
 
         CloudSim.send(getId(), SimManager.getInstance().getId(), 0.0, 0, tp);
@@ -205,7 +211,8 @@ public class DagRuntimeManager extends SimEntity {
      * Called by external components when a cloudlet finishes. This looks up the
      * DAG task and forwards to the internal completion handler.
      */
-    public void onTaskCloudletFinished(long cloudletId, double finishClock) {
+    public void onTaskCloudletFinished(Task cloudlet) {
+        long cloudletId = cloudlet.getCloudletId();
         String[] ids = cloudletToDagMap.get(cloudletId);
         if (ids == null)
             return; // not a DAG task
@@ -230,8 +237,24 @@ public class DagRuntimeManager extends SimEntity {
         if (task == null)
             return;
 
-        // Mark finish time and call internal handler
+        // Extract timing and split-up info from Task and SimLogger
+        double finishClock = CloudSim.clock();
         task.setFinishTimeMs(finishClock * 1000.0);
+        task.setStartTimeMs(cloudlet.getExecStartTime() * 1000.0);
+
+        // Fetch deep metrics from SimLogger
+        Map<String, Double> metrics = SimLogger.getInstance().getTaskMetrics((int) cloudletId);
+        if (metrics != null) {
+            task.setUploadDelayMs(metrics.getOrDefault("lanUploadDelay", 0.0) * 1000.0
+                    + metrics.getOrDefault("wanUploadDelay", 0.0) * 1000.0);
+            task.setDownloadDelayMs(metrics.getOrDefault("lanDownloadDelay", 0.0) * 1000.0
+                    + metrics.getOrDefault("wanDownloadDelay", 0.0) * 1000.0);
+            task.setNetworkDelayMs(metrics.getOrDefault("netDelay", 0.0) * 1000.0);
+
+            double queueDelay = (task.getStartTimeMs() - task.getScheduledTimeMs());
+            task.setQueueDelayMs(Math.max(0, queueDelay));
+        }
+
         processTaskFinished(task);
         // cleanup mapping
         cloudletToDagMap.remove(cloudletId);
@@ -246,22 +269,26 @@ public class DagRuntimeManager extends SimEntity {
             return;
         }
 
-        double finishTime = CloudSim.clock() * 1000.0;
-        task.setFinishTimeMs(finishTime);
+        // Task Record is already updated with finish time in onTaskCloudletFinished
         task.setState(TaskRecord.TaskState.DONE);
         dag.incrementCompletedTasks();
 
-        System.out.println("[" + String.format("%.2f", CloudSim.clock()) + "] Task finished: " + task.getTaskId() + " ("
-                + dag.getCompletedTasks() + "/" + dag.getTotalTasks() + ")");
+        System.out.println(String.format("[%s] [%.2f] Task finished: %s of %s (%d/%d)",
+                dag.getApplicationName(),
+                CloudSim.clock(),
+                task.getTaskId(),
+                dag.getDagId(),
+                dag.getCompletedTasks(),
+                dag.getTotalTasks()));
 
-        logTaskCompletion(task, dagId);
+        logTaskCompletion(task, dag);
 
         for (String childTaskId : task.getChildren()) {
             TaskRecord child = dag.getTask(childTaskId);
             if (child != null) {
                 child.decrementRemainingDeps();
                 if (child.getRemainingDeps() == 0) {
-                    child.setReadyTimeMs(finishTime);
+                    child.setReadyTimeMs(task.getFinishTimeMs());
                     child.setState(TaskRecord.TaskState.READY);
                     CloudSim.send(getId(), this.getId(), 0, TASK_READY, child);
                 }
@@ -270,7 +297,7 @@ public class DagRuntimeManager extends SimEntity {
 
         if (dag.isComplete()) {
             dag.setState(DagRecord.DagState.COMPLETE);
-            dag.setCompleteTimeMs(finishTime);
+            dag.setCompleteTimeMs(task.getFinishTimeMs());
             long makespanMs = (long) dag.getMakespanMs();
             totalDagRunTimeMs += makespanMs; // Accumulate total runtime
             System.out.println("[" + String.format("%.2f", CloudSim.clock()) + "] DAG complete: " + dagId
@@ -347,7 +374,7 @@ public class DagRuntimeManager extends SimEntity {
         dagLogWriter.flush();
     }
 
-    private void logTaskCompletion(TaskRecord task, String dagId) {
+    private void logTaskCompletion(TaskRecord task, DagRecord dag) {
         // Compute same derived fields as scheduling time for logging
         SimSettings ss = SimSettings.getInstance();
         long lengthMi = (long) (task.getDurationMs() * ss.getMipsForCloudVM() / 1000.0);
@@ -367,13 +394,13 @@ public class DagRuntimeManager extends SimEntity {
         long outputBytes = Math.max(1024L, (long) (inputBytes * 0.1));
 
         taskLogWriter.println(String.join(",",
-                dagId,
+                dag.getDagId(),
                 task.getTaskId(),
                 task.getTaskType(),
-                "-1",
+                String.valueOf(dag.getSubmitAtSimMs()),
                 String.format("%.2f", task.getReadyTimeMs()),
                 String.format("%.2f", task.getScheduledTimeMs()),
-                "-1",
+                String.format("%.2f", task.getStartTimeMs()),
                 String.format("%.2f", task.getFinishTimeMs()),
                 String.valueOf(task.getAssignedTier()),
                 String.valueOf(task.getAssignedDatacenterId()),
@@ -386,17 +413,31 @@ public class DagRuntimeManager extends SimEntity {
                 String.valueOf(outputBytes),
                 String.format("%.2f", task.getGpuMemoryMb()),
                 String.format("%.2f", task.getGpuUtilization()),
-                "-1",
-                "-1",
-                "-1"));
+                String.format("%.2f", task.getQueueDelayMs()),
+                "-1", // net_propagation_ms
+                "-1", // net_tx_ms
+                String.format("%.2f", task.getNetworkDelayMs())));
+        taskLogWriter.flush();
     }
 
     private void logDagCompletion(DagRecord dag) {
-        // Compute simple metrics from DAG structure
+        // Compute metrics from DAG tasks
         int numTasks = dag.getTotalTasks();
         long submitMs = dag.getSubmitAtSimMs();
         long completeMs = (long) (dag.getCompleteTimeMs());
         long makespan = completeMs - submitMs;
+
+        int edgeTasks = 0;
+        int cloudTasks = 0;
+        double totalNetMs = 0;
+        for (TaskRecord task : dag.getTasksById().values()) {
+            if (task.getAssignedTier() == SimSettings.VM_TYPES.EDGE_VM.ordinal())
+                edgeTasks++;
+            else if (task.getAssignedTier() == SimSettings.VM_TYPES.CLOUD_VM.ordinal())
+                cloudTasks++;
+
+            totalNetMs += task.getNetworkDelayMs();
+        }
 
         // Write CSV row with collected data
         dagLogWriter.println(String.join(",",
@@ -405,10 +446,10 @@ public class DagRuntimeManager extends SimEntity {
                 String.valueOf(completeMs),
                 String.valueOf(Math.max(0L, makespan)),
                 String.valueOf(numTasks),
-                "-1", // edge_tasks (not computed)
-                "-1", // cloud_tasks (not computed)
-                "-1", // total_net_ms (not computed)
-                "-1" // total_wan_bytes (not computed)
+                String.valueOf(edgeTasks),
+                String.valueOf(cloudTasks),
+                String.format("%.2f", totalNetMs),
+                "-1" // total_wan_bytes (still not computed)
         ));
         dagLogWriter.flush(); // Flush after each DAG
     }

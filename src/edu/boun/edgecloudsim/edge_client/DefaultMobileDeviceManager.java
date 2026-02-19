@@ -244,7 +244,7 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 
 				// Notify DAG runtime manager (if present) that this cloudlet finished
 				if (DagRuntimeManager.getInstance() != null) {
-					DagRuntimeManager.getInstance().onTaskCloudletFinished(task.getCloudletId(), CloudSim.clock());
+					DagRuntimeManager.getInstance().onTaskCloudletFinished(task);
 				}
 				break;
 			}

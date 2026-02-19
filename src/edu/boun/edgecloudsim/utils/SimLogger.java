@@ -365,6 +365,30 @@ public class SimLogger {
 	}
 
 	/**
+	 * Returns metrics for a specific task as a Map of keys to values.
+	 * This allows external packages to access LogItem data without making the class
+	 * public.
+	 */
+	public Map<String, Double> getTaskMetrics(int taskId) {
+		LogItem item = taskMap.get(taskId);
+		if (item == null)
+			return null;
+
+		Map<String, Double> metrics = new HashMap<>();
+		metrics.put("startTime", item.getTaskStartTime());
+		metrics.put("endTime", item.getTaskEndTime());
+		metrics.put("lanUploadDelay", item.getNetworkUploadDelay(NETWORK_DELAY_TYPES.WLAN_DELAY));
+		metrics.put("wanUploadDelay", item.getNetworkUploadDelay(NETWORK_DELAY_TYPES.WAN_DELAY));
+		metrics.put("lanDownloadDelay", item.getNetworkDownloadDelay(NETWORK_DELAY_TYPES.WLAN_DELAY));
+		metrics.put("wanDownloadDelay", item.getNetworkDownloadDelay(NETWORK_DELAY_TYPES.WAN_DELAY));
+		metrics.put("netDelay", item.getNetworkDelay());
+		metrics.put("bwCost", item.getBwCost());
+		metrics.put("cpuCost", item.getCpuCost());
+		metrics.put("qoe", item.getQoE());
+		return metrics;
+	}
+
+	/**
 	 * Helper method to append a line to a buffered writer with proper formatting.
 	 * 
 	 * @param bw   the BufferedWriter to write to
@@ -1695,6 +1719,14 @@ class LogItem {
 
 	public double getQoE() {
 		return QoE;
+	}
+
+	public double getTaskStartTime() {
+		return taskStartTime;
+	}
+
+	public double getTaskEndTime() {
+		return taskEndTime;
 	}
 
 	public double getOrchestratorOverhead() {
