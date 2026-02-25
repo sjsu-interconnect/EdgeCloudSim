@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 
+  Maven Dependencies for EdgeCloudSim DAG Scheduling Integration
+  
+  Add these to your EdgeCloudSim pom.xml <dependencies> section
+-->
+
+<!-- Gson for JSON parsing (REQUIRED) -->
+<dependency>
+    <groupId>com.google.code.gson</groupId>
+    <artifactId>gson</artifactId>
+    <version>2.10.1</version>
+</dependency>
+
+<!-- CloudSim Core (usually already in EdgeCloudSim) -->
+<dependency>
+    <groupId>org.cloudbus.cloudsim</groupId>
+    <artifactId>cloudsim</artifactId>
+    <version>5.0</version>
+</dependency>
+
+<!-- JUnit for testing (OPTIONAL but recommended) -->
+<dependency>
+    <groupId>junit</groupId>
+    <artifactId>junit</artifactId>
+    <version>4.13.2</version>
+    <scope>test</scope>
+</dependency>
+
+<!-- SLF4J for logging (OPTIONAL) -->
+<dependency>
+    <groupId>org.slf4j</groupId>
+    <artifactId>slf4j-api</artifactId>
+    <version>2.0.7</version>
+</dependency>
+
+<!-- Logback for SLF4J implementation (OPTIONAL) -->
+<dependency>
+    <groupId>ch.qos.logback</groupId>
+    <artifactId>logback-classic</artifactId>
+    <version>1.4.11</version>
+</dependency>
+
+<!-- 
+  NOTES:
+  
+  1. Gson (REQUIRED):
+     Used by DagJsonLoader to parse DAG JSON files.
+     No alternatives - this is what we've built against.
+  
+  2. CloudSim (REQUIRED):
+     Typically already in EdgeCloudSim, but listed for clarity.
+     Ensure version compatibility with your EdgeCloudSim fork.
+  
+  3. JUnit (OPTIONAL):
+     Use to create unit tests for DagJsonLoader and policies.
+     Example test class structure provided below.
+  
+  4. SLF4J + Logback (OPTIONAL):
+     For better logging. If not used, System.out/err is sufficient.
+     Not required by the core implementation.
+  
+  If you're using a different logging framework (Log4j2, etc.),
+  adjust accordingly. Or just use System.out/err (no dependency needed).
+-->

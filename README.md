@@ -97,6 +97,50 @@ These tutorials demonstrate **5 different engineering problems** commonly encoun
 
 The tutorials are designed as step-by-step guides for learning EdgeCloudSim's core functionalities and extending them for your specific research needs.
 
+## 📚 Documentation
+
+### Core Concepts & Calculations
+- **[COST_CALCULATION_BREAKDOWN.md](/doc/COST_CALCULATION_BREAKDOWN.md)** - Comprehensive guide to cost calculation including:
+  - Cost components (bandwidth cost, CPU cost)
+  - Formulas and default values
+  - Configuration options
+  - Practical implications and optimization strategies
+  - Example calculations with real scenarios
+
+- **[COST_QUICK_REFERENCE.md](/doc/COST_QUICK_REFERENCE.md)** - Quick lookup guide for cost metrics:
+  - Formula summary
+  - Cost breakdown interpretation
+  - Configuration parameters
+  - Cost impact examples
+  - Troubleshooting high costs
+
+- **[COST_IMPLEMENTATION_GUIDE.md](/doc/COST_IMPLEMENTATION_GUIDE.md)** - Deep dive into implementation:
+  - Architecture diagram and data flow
+  - Key classes and methods
+  - Execution trace examples
+  - Code modification guide
+  - Testing and validation
+
+### System Architecture
+- **[DAG_SCHEDULING_FLOW.md](/doc/DAG_SCHEDULING_FLOW.md)** - Task scheduling and execution flow
+- **[INTEGRATION_GUIDE.md](/doc/INTEGRATION_GUIDE.md)** - Integration patterns for DAG simulation
+- **[EdgeCloudSim_ModellingGuide.pdf](/doc/EdgeCloudSim_ModellingGuide.pdf)** - Comprehensive modelling guide
+
+### Getting Started with Analysis
+
+After running simulations, use the Python or MATLAB scripts in the `matlab/` directories:
+```bash
+cd scripts/sample_app1/matlab
+# Plots are generated from output CSV files
+```
+
+The output files contain detailed metrics including:
+- Task execution times (service, processing, network delays)
+- Resource utilization (VM load on edge/cloud/mobile)
+- Cost metrics (total, bandwidth, CPU - per task averages)
+- Quality of Experience (QoE) metrics
+- Failure analysis and statistics
+
 ## Discussion Forum
 
 The discussion forum for EdgeCloudSim can be found [here](https://groups.google.com/forum/#!forum/edgecloudsim).

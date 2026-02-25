@@ -72,3 +72,6 @@ coverage.xml
 *.log
 *.tmp
 *.bak
+
+/scripts/output/
+misc/

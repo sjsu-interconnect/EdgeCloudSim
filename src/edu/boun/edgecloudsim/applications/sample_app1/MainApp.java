@@ -22,6 +22,11 @@ import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
 import edu.boun.edgecloudsim.utils.SimLogger;
 import edu.boun.edgecloudsim.utils.SimUtils;
+import edu.boun.edgecloudsim.dagsim.DagJsonLoader;
+import edu.boun.edgecloudsim.dagsim.DagRecord;
+import edu.boun.edgecloudsim.dagsim.DagRuntimeManager;
+import java.util.List;
+import java.io.IOException;
 
 public class MainApp {
 	
@@ -73,6 +78,15 @@ public class MainApp {
 			SimLogger.printLine("cannot initialize simulation settings!");
 			System.exit(0);
 		}
+
+		// If an RNG seed is provided in the config, apply it to the shared RNG
+		if(SS.hasRngSeed()){
+			SimUtils.setSeed(SS.getRngSeed());
+			SimLogger.printLine("Deterministic RNG seed set to: " + SS.getRngSeed());
+		}
+		
+		// DEBUG: Log actual device configuration read from file
+		SimLogger.printLine("DEBUG: Config loaded - Min devices: " + SS.getMinNumOfMobileDev() + ", Max devices: " + SS.getMaxNumOfMobileDev() + ", Counter size: " + SS.getMobileDevCounterSize());
 		
 		// Enable file logging and prepare output directory if configured
 		if(SS.getFileLoggingEnabled()){
@@ -90,6 +104,7 @@ public class MainApp {
 		// Triple nested loop to run all combinations of mobile devices, scenarios, and policies
 		for(int j=SS.getMinNumOfMobileDev(); j<=SS.getMaxNumOfMobileDev(); j+=SS.getMobileDevCounterSize())
 		{
+			SimLogger.printLine("DEBUG: Starting iteration with " + j + " devices");
 			for(int k=0; k<SS.getSimulationScenarios().length; k++)
 			{
 				for(int i=0; i<SS.getOrchestratorPolicies().length; i++)
@@ -121,7 +136,34 @@ public class MainApp {
 						
 						// Create EdgeCloudSim simulation manager
 						SimManager manager = new SimManager(sampleFactory, j, simScenario, orchestratorPolicy);
-						
+						// If DAGs are present, load and register DagRuntimeManager so DAG tasks are submitted
+						try {
+							// Try to find the dagsim directory by traversing up the directory tree
+							String dagDirPath = null;
+							java.io.File currentDir = new java.io.File(".").getAbsoluteFile();
+							// Traverse up to find EdgeCloudSim project root (contains bin and src folders)
+							while (currentDir != null && !currentDir.getName().equals("/")) {
+								java.io.File candidate = new java.io.File(currentDir, "src/edu/boun/edgecloudsim/dagsim");
+								if (candidate.isDirectory()) {
+									dagDirPath = candidate.getAbsolutePath();
+									break;
+								}
+								currentDir = currentDir.getParentFile();
+							}
+							if (dagDirPath != null) {
+								List<DagRecord> dags = DagJsonLoader.loadAllDags(dagDirPath);
+								if (dags != null && !dags.isEmpty()) {
+									DagRuntimeManager dagManager = new DagRuntimeManager("DagRuntime", dags);
+									dagManager.scheduleAllDagSubmissions();
+									SimLogger.printLine("Loaded " + dags.size() + " DAG(s) for simulation");
+								}
+							} else {
+								SimLogger.printLine("Warning: could not find dagsim directory in project");
+							}
+						} catch (IOException ioe) {
+							SimLogger.printLine("Warning: could not load DAGs: " + ioe.getMessage());
+						}
+
 						// Execute the simulation
 						manager.startSimulation();
 					}

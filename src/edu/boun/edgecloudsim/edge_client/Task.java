@@ -18,8 +18,10 @@ import org.cloudbus.cloudsim.core.CloudSim;
 import edu.boun.edgecloudsim.utils.Location;
 
 /**
- * Task extends CloudSim's Cloudlet class to provide EdgeCloudSim-specific task functionality.
- * Adds mobile device context, location tracking, and resource assignment information
+ * Task extends CloudSim's Cloudlet class to provide EdgeCloudSim-specific task
+ * functionality.
+ * Adds mobile device context, location tracking, and resource assignment
+ * information
  * for edge computing task management and orchestration.
  */
 public class Task extends Cloudlet {
@@ -30,19 +32,22 @@ public class Task extends Cloudlet {
 	private int hostIndex;
 	private int vmIndex;
 	private int datacenterId;
+	private String dagId;
+	private String dagTaskId;
 
 	/**
 	 * Constructor for Task with specified parameters.
 	 * 
-	 * @param _mobileDeviceId ID of the mobile device that generated this task
-	 * @param cloudletId Unique identifier for this task/cloudlet
-	 * @param cloudletLength Processing length required in Million Instructions (MI)
-	 * @param pesNumber Number of processing elements required
-	 * @param cloudletFileSize Input data size in bytes
-	 * @param cloudletOutputSize Output data size in bytes
+	 * @param _mobileDeviceId     ID of the mobile device that generated this task
+	 * @param cloudletId          Unique identifier for this task/cloudlet
+	 * @param cloudletLength      Processing length required in Million Instructions
+	 *                            (MI)
+	 * @param pesNumber           Number of processing elements required
+	 * @param cloudletFileSize    Input data size in bytes
+	 * @param cloudletOutputSize  Output data size in bytes
 	 * @param utilizationModelCpu CPU utilization model for this task
 	 * @param utilizationModelRam RAM utilization model for this task
-	 * @param utilizationModelBw Bandwidth utilization model for this task
+	 * @param utilizationModelBw  Bandwidth utilization model for this task
 	 */
 	public Task(int _mobileDeviceId, int cloudletId, long cloudletLength, int pesNumber,
 			long cloudletFileSize, long cloudletOutputSize,
@@ -52,105 +57,132 @@ public class Task extends Cloudlet {
 		super(cloudletId, cloudletLength, pesNumber, cloudletFileSize,
 				cloudletOutputSize, utilizationModelCpu, utilizationModelRam,
 				utilizationModelBw);
-		
+
 		mobileDeviceId = _mobileDeviceId;
 		creationTime = CloudSim.clock();
 	}
 
-	
 	/**
 	 * Sets the location where this task was submitted.
+	 * 
 	 * @param _submittedLocation Geographic location of task submission
 	 */
-	public void setSubmittedLocation(Location _submittedLocation){
-		submittedLocation =_submittedLocation;
+	public void setSubmittedLocation(Location _submittedLocation) {
+		submittedLocation = _submittedLocation;
 	}
 
 	/**
 	 * Associates this task with a specific datacenter for execution.
+	 * 
 	 * @param _datacenterId ID of the datacenter (cloud, edge, or mobile)
 	 */
-	public void setAssociatedDatacenterId(int _datacenterId){
-		datacenterId=_datacenterId;
+	public void setAssociatedDatacenterId(int _datacenterId) {
+		datacenterId = _datacenterId;
 	}
-	
+
 	/**
 	 * Associates this task with a specific host for execution.
+	 * 
 	 * @param _hostIndex ID of the host where this task will be executed
 	 */
-	public void setAssociatedHostId(int _hostIndex){
-		hostIndex=_hostIndex;
+	public void setAssociatedHostId(int _hostIndex) {
+		hostIndex = _hostIndex;
 	}
 
 	/**
 	 * Associates this task with a specific VM for execution.
+	 * 
 	 * @param _vmIndex ID of the VM where this task will be executed
 	 */
-	public void setAssociatedVmId(int _vmIndex){
-		vmIndex=_vmIndex;
+	public void setAssociatedVmId(int _vmIndex) {
+		vmIndex = _vmIndex;
 	}
-	
+
 	/**
 	 * Sets the application type of this task.
+	 * 
 	 * @param _type Task type identifier for application classification
 	 */
-	public void setTaskType(int _type){
-		type=_type;
+	public void setTaskType(int _type) {
+		type = _type;
 	}
 
 	/**
 	 * Gets the ID of the mobile device that generated this task.
+	 * 
 	 * @return Mobile device identifier
 	 */
-	public int getMobileDeviceId(){
+	public int getMobileDeviceId() {
 		return mobileDeviceId;
 	}
-	
+
 	/**
 	 * Gets the location where this task was submitted.
+	 * 
 	 * @return Geographic location of task submission
 	 */
-	public Location getSubmittedLocation(){
+	public Location getSubmittedLocation() {
 		return submittedLocation;
 	}
-	
+
 	/**
 	 * Gets the datacenter associated with this task's execution.
+	 * 
 	 * @return Datacenter ID where task is being processed
 	 */
-	public int getAssociatedDatacenterId(){
+	public int getAssociatedDatacenterId() {
 		return datacenterId;
 	}
-	
+
 	/**
 	 * Gets the host associated with this task's execution.
+	 * 
 	 * @return Host ID where task is being processed
 	 */
-	public int getAssociatedHostId(){
+	public int getAssociatedHostId() {
 		return hostIndex;
 	}
 
 	/**
 	 * Gets the VM associated with this task's execution.
+	 * 
 	 * @return VM ID where task is being processed
 	 */
-	public int getAssociatedVmId(){
+	public int getAssociatedVmId() {
 		return vmIndex;
 	}
-	
+
 	/**
 	 * Gets the application type of this task.
+	 * 
 	 * @return Task type identifier for application classification
 	 */
-	public int getTaskType(){
+	public int getTaskType() {
 		return type;
 	}
-	
+
 	/**
 	 * Gets the simulation time when this task was created.
+	 * 
 	 * @return Creation timestamp in simulation time
 	 */
 	public double getCreationTime() {
 		return creationTime;
+	}
+
+	public String getDagId() {
+		return dagId;
+	}
+
+	public void setDagId(String _dagId) {
+		dagId = _dagId;
+	}
+
+	public String getDagTaskId() {
+		return dagTaskId;
+	}
+
+	public void setDagTaskId(String _dagTaskId) {
+		dagTaskId = _dagTaskId;
 	}
 }

@@ -45,7 +45,15 @@ public class SimUtils {
 	 * across simulation runs while maintaining reproducibility within
 	 * a single simulation execution.</p>
 	 */
-	public static final Random RNG = new Random(System.currentTimeMillis());
+	public static final Random RNG = new Random();
+
+	/**
+	 * Set the shared RNG seed for deterministic runs.
+	 * Call this once at startup (after SimSettings.initialize).
+	 */
+	public static void setSeed(long seed) {
+		RNG.setSeed(seed);
+	}
 
 	/**
 	 * Generates a random integer within the specified range (inclusive).
