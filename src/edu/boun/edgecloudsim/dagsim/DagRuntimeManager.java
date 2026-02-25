@@ -1,5 +1,6 @@
 package edu.boun.edgecloudsim.dagsim;
 
+import com.google.gson.JsonObject;
 import org.cloudbus.cloudsim.core.CloudSim;
 import org.cloudbus.cloudsim.core.SimEntity;
 import org.cloudbus.cloudsim.core.SimEvent;
@@ -12,6 +13,10 @@ import java.util.Map;
 
 import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
+import edu.boun.edgecloudsim.dagsim.scheduling.ClusterState;
+import edu.boun.edgecloudsim.dagsim.scheduling.RemoteRLPolicy;
+import edu.boun.edgecloudsim.dagsim.scheduling.TaskContext;
+import edu.boun.edgecloudsim.edge_orchestrator.DagAwareOrchestrator;
 import edu.boun.edgecloudsim.utils.TaskProperty;
 import edu.boun.edgecloudsim.utils.SimLogger;
 import edu.boun.edgecloudsim.edge_client.Task;
@@ -35,6 +40,7 @@ public class DagRuntimeManager extends SimEntity {
     private Map<String, Map<String, long[]>> dagTaskRegistry = new HashMap<>();
     // Map from CloudSim cloudlet id -> { dagId, taskId }
     private Map<Long, String[]> cloudletToDagMap = new HashMap<>();
+    private Map<String, Double> dagCostSoFar = new HashMap<>();
 
     // Singleton instance for global callbacks
     private static DagRuntimeManager instance = null;
@@ -76,6 +82,10 @@ public class DagRuntimeManager extends SimEntity {
         return activeDags;
     }
 
+    public double getDagCostSoFar(String dagId) {
+        return dagCostSoFar.getOrDefault(dagId, 0.0);
+    }
+
     public void scheduleAllDagSubmissions() {
         for (DagRecord dag : allDags) {
             double submitTimeSeconds = dag.getSubmitAtSimMs() / 1000.0;
@@ -104,6 +114,7 @@ public class DagRuntimeManager extends SimEntity {
         double submitTime = CloudSim.clock() * 1000.0;
         dag.setState(DagRecord.DagState.SUBMITTED);
         activeDags.put(dag.getDagId(), dag);
+        dagCostSoFar.put(dag.getDagId(), 0.0);
 
         System.out.println(String.format("[%s] [%.2f] DAG submitted: %s with %d tasks",
                 dag.getApplicationName(),
@@ -241,21 +252,67 @@ public class DagRuntimeManager extends SimEntity {
         double finishClock = CloudSim.clock();
         task.setFinishTimeMs(finishClock * 1000.0);
         task.setStartTimeMs(cloudlet.getExecStartTime() * 1000.0);
+        task.setAssignedVmId(cloudlet.getAssociatedVmId());
+        task.setAssignedDatacenterId(cloudlet.getAssociatedDatacenterId());
+        int tier = (cloudlet.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID)
+                ? SimSettings.VM_TYPES.CLOUD_VM.ordinal()
+                : SimSettings.VM_TYPES.EDGE_VM.ordinal();
+        task.setAssignedTier(tier);
 
         // Fetch deep metrics from SimLogger
         Map<String, Double> metrics = SimLogger.getInstance().getTaskMetrics((int) cloudletId);
+        double actualCost = 0.0;
         if (metrics != null) {
             task.setUploadDelayMs(metrics.getOrDefault("lanUploadDelay", 0.0) * 1000.0
                     + metrics.getOrDefault("wanUploadDelay", 0.0) * 1000.0);
             task.setDownloadDelayMs(metrics.getOrDefault("lanDownloadDelay", 0.0) * 1000.0
                     + metrics.getOrDefault("wanDownloadDelay", 0.0) * 1000.0);
             task.setNetworkDelayMs(metrics.getOrDefault("netDelay", 0.0) * 1000.0);
+            actualCost = metrics.getOrDefault("bwCost", 0.0) + metrics.getOrDefault("cpuCost", 0.0);
 
             double queueDelay = (task.getStartTimeMs() - task.getScheduledTimeMs());
             task.setQueueDelayMs(Math.max(0, queueDelay));
         }
 
+        double actualLatency = Math.max(0.0, task.getFinishTimeMs() - task.getReadyTimeMs());
+        double newCostSoFar = dagCostSoFar.getOrDefault(dagId, 0.0) + actualCost;
+        dagCostSoFar.put(dagId, newCostSoFar);
+
+        SimSettings ss = SimSettings.getInstance();
+        double reward = -1.0 * ((ss.getRlAlphaL() * (actualLatency / Math.max(1e-9, ss.getRlLHat())))
+                + (ss.getRlAlphaC() * (actualCost / Math.max(1e-9, ss.getRlCHat()))));
+        boolean budgetViolated = newCostSoFar > ss.getRlBudgetCost();
+        if (budgetViolated) {
+            reward += ss.getRlBudgetPenalty();
+        }
+
+        RemoteRLPolicy.DecisionTrace trace = RemoteRLPolicy.consumeTrace(dagId, taskId);
+
         processTaskFinished(task);
+
+        boolean done = !activeDags.containsKey(dagId);
+        TaskContext nextTaskCtx = buildTaskContextForNextState(dag, done ? null : findAnyPendingTask(dag), task);
+        ClusterState nextClusterState = DagAwareOrchestrator.buildClusterStateSnapshot();
+        JsonObject nextState = RemoteRLPolicy.buildStateJson(
+                nextTaskCtx,
+                nextClusterState,
+                dagCostSoFar.getOrDefault(dagId, newCostSoFar),
+                ss.getRlBudgetCost(),
+                getActiveDagsCount());
+
+        RemoteRLPolicy.postObservation(
+                ss.getRlServiceUrl(),
+                ss.getRlHttpTimeoutMs(),
+                trace,
+                nextState,
+                reward,
+                done,
+                actualLatency,
+                actualCost,
+                dagCostSoFar.getOrDefault(dagId, newCostSoFar),
+                ss.getRlBudgetCost(),
+                budgetViolated);
+
         // cleanup mapping
         cloudletToDagMap.remove(cloudletId);
     }
@@ -306,6 +363,7 @@ public class DagRuntimeManager extends SimEntity {
             edu.boun.edgecloudsim.utils.SimLogger.getInstance().addCompletedDag(); // Track DAG completion for cost
                                                                                    // summary
             activeDags.remove(dagId);
+            dagCostSoFar.remove(dagId);
         }
     }
 
@@ -316,6 +374,46 @@ public class DagRuntimeManager extends SimEntity {
             }
         }
         return null;
+    }
+
+    private TaskRecord findAnyPendingTask(DagRecord dag) {
+        if (dag == null) {
+            return null;
+        }
+        for (TaskRecord t : dag.getTasksById().values()) {
+            if (t.getState() == TaskRecord.TaskState.READY || t.getState() == TaskRecord.TaskState.SCHEDULED) {
+                return t;
+            }
+        }
+        for (TaskRecord t : dag.getTasksById().values()) {
+            if (t.getState() != TaskRecord.TaskState.DONE) {
+                return t;
+            }
+        }
+        return null;
+    }
+
+    private TaskContext buildTaskContextForNextState(DagRecord dag, TaskRecord candidate, TaskRecord fallbackTask) {
+        TaskRecord base = (candidate != null) ? candidate : fallbackTask;
+        TaskContext ctx = new TaskContext();
+        ctx.dagId = (dag != null) ? dag.getDagId() : (fallbackTask != null ? findDagIdForTask(fallbackTask) : "NA");
+        ctx.taskId = (base != null) ? base.getTaskId() : "NA";
+        ctx.taskType = (base != null) ? base.getTaskType() : "NA";
+
+        SimSettings ss = SimSettings.getInstance();
+        double lengthMi = 1.0;
+        if (base != null) {
+            lengthMi = Math.max(1.0, base.getDurationMs() * ss.getMipsForCloudVM() / 1000.0);
+            ctx.cpuMemoryMb = Math.max(base.getMemoryMb(), 1.0);
+        } else {
+            ctx.cpuMemoryMb = Math.max(ss.getRamForMobileVM(), 1.0);
+        }
+        ctx.lengthMI = lengthMi;
+        ctx.gpuMemoryMb = (base != null) ? base.getGpuMemoryMb() : 0.0;
+        ctx.gpuUtilizationPercent = (base != null) ? base.getGpuUtilization() : 0.0;
+        ctx.readyTimeMs = (base != null) ? base.getReadyTimeMs() : CloudSim.clock() * 1000.0;
+        ctx.currentTimeMs = CloudSim.clock() * 1000.0;
+        return ctx;
     }
 
     @Override
