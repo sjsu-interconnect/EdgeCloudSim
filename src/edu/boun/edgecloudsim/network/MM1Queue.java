@@ -10,6 +10,7 @@
 
 package edu.boun.edgecloudsim.network;
 
+import org.cloudbus.cloudsim.Datacenter;
 import org.cloudbus.cloudsim.core.CloudSim;
 
 import edu.boun.edgecloudsim.core.SimManager;
@@ -238,12 +239,12 @@ public class MM1Queue extends NetworkModel {
 			// Base WLAN delay from access point to mobile device
 			delay = getWlanDownloadDelay(accessPointLocation, CloudSim.clock());
 
-			// Get the edge host serving the source device for location comparison
-			EdgeHost host = (EdgeHost)(SimManager.
-					getInstance().
-					getEdgeServerManager().
-					getDatacenterList().get(sourceDeviceId).
-					getHostList().get(0));
+			// Resolve source edge datacenter either as list index or datacenter entity ID.
+			Datacenter sourceDc = resolveEdgeDatacenter(sourceDeviceId);
+			if (sourceDc == null || sourceDc.getHostList().isEmpty()) {
+				return delay;
+			}
+			EdgeHost host = (EdgeHost) sourceDc.getHostList().get(0);
 
 			// Check if source edge server is in a different location than destination mobile device
 			// If so, add inter-edge routing delay (round-trip through network infrastructure)
@@ -253,6 +254,19 @@ public class MM1Queue extends NetworkModel {
 		}
 
 		return delay;
+	}
+
+	private Datacenter resolveEdgeDatacenter(int sourceDeviceId){
+		java.util.List<Datacenter> dcs = SimManager.getInstance().getEdgeServerManager().getDatacenterList();
+		if (sourceDeviceId >= 0 && sourceDeviceId < dcs.size()) {
+			return dcs.get(sourceDeviceId);
+		}
+		for (Datacenter dc : dcs) {
+			if (dc.getId() == sourceDeviceId) {
+				return dc;
+			}
+		}
+		return null;
 	}
 
 	/**

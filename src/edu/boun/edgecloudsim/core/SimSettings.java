@@ -117,6 +117,7 @@ public class SimSettings {
 	private String[] SIMULATION_SCENARIOS;
 	private String[] ORCHESTRATOR_POLICIES;
 	private String RL_SERVICE_URL;
+	private String DAG_INPUT_PATH;
 	private int RL_HTTP_TIMEOUT_MS;
 	private boolean RL_TRAINING_MODE;
 	private double RL_ALPHA_L;
@@ -259,6 +260,7 @@ public class SimSettings {
 			SIMULATION_SCENARIOS = prop.getProperty("simulation_scenarios").split(",");
 			RL_SERVICE_URL = prop.getProperty("rl_service_url",
 					prop.getProperty("rl_server_url", "http://localhost:8000"));
+			DAG_INPUT_PATH = prop.getProperty("dag_input_path", "").trim();
 			RL_HTTP_TIMEOUT_MS = Integer.parseInt(prop.getProperty("http_timeout_ms", "5000"));
 			RL_TRAINING_MODE = Boolean.parseBoolean(prop.getProperty("training_mode", "true"));
 			RL_ALPHA_L = Double.parseDouble(prop.getProperty("alpha_l", "1.0"));
@@ -597,6 +599,10 @@ public class SimSettings {
 
 	public String getRlServiceUrl() {
 		return RL_SERVICE_URL;
+	}
+
+	public String getDagInputPath() {
+		return DAG_INPUT_PATH;
 	}
 
 	public int getRlHttpTimeoutMs() {
