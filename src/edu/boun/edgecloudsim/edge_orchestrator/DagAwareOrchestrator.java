@@ -46,13 +46,23 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         if (decision.destTier == PlacementDecision.TIER_CLOUD) {
             // Retrieve cloud VM
             List<CloudVM> vms = SimManager.getInstance().getCloudServerManager().getVmList(decision.destDatacenterId);
-            if (decision.destVmId >= 0 && decision.destVmId < vms.size()) {
+            for (CloudVM vm : vms) {
+                if (vm.getId() == decision.destVmId) {
+                    return vm;
+                }
+            }
+            if (decision.destVmId >= 0 && decision.destVmId < vms.size()) { // backward-compatible index fallback
                 return vms.get(decision.destVmId);
             }
         } else {
             // Retrieve edge VM
             List<EdgeVM> vms = SimManager.getInstance().getEdgeServerManager().getVmList(decision.destDatacenterId);
-            if (decision.destVmId >= 0 && decision.destVmId < vms.size()) {
+            for (EdgeVM vm : vms) {
+                if (vm.getId() == decision.destVmId) {
+                    return vm;
+                }
+            }
+            if (decision.destVmId >= 0 && decision.destVmId < vms.size()) { // backward-compatible index fallback
                 return vms.get(decision.destVmId);
             }
         }
@@ -62,7 +72,7 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
     private PlacementDecision getPolicyDecision(Task task) {
         // Convert Task to TaskContext
         TaskContext context = new TaskContext();
-        context.taskId = String.valueOf(task.getCloudletId());
+        context.taskId = (task.getDagTaskId() != null) ? task.getDagTaskId() : String.valueOf(task.getCloudletId());
         context.dagId = task.getDagId();
         context.taskType = SimSettings.getInstance().getTaskName(task.getTaskType());
         context.lengthMI = task.getCloudletLength();
@@ -73,12 +83,12 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         context.currentTimeMs = CloudSim.clock() * 1000.0;
 
         // Build Cluster State snippet
-        ClusterState state = buildClusterState();
+        ClusterState state = buildClusterStateSnapshot();
 
         return schedulingPolicy.decide(context, state);
     }
 
-    private ClusterState buildClusterState() {
+    public static ClusterState buildClusterStateSnapshot() {
         ClusterState state = new ClusterState(CloudSim.clock() * 1000.0);
 
         // Populate VMs based on EdgeServerManager and CloudServerManager
