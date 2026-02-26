@@ -8,8 +8,10 @@ import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
@@ -48,6 +50,8 @@ public class DagRuntimeManager extends SimEntity {
     private PrintWriter taskLogWriter;
     private PrintWriter dagLogWriter;
     private long totalDagRunTimeMs = 0; // Track total runtime across all DAGs
+    private int dagsArrivedCount = 0; // DAG_SUBMIT events actually processed
+    private final Set<String> dagsWithScheduledTasks = new HashSet<>(); // DAGs that reached scheduling path
 
     public DagRuntimeManager(String name, List<DagRecord> dags) {
         super(name);
@@ -115,6 +119,7 @@ public class DagRuntimeManager extends SimEntity {
         dag.setState(DagRecord.DagState.SUBMITTED);
         activeDags.put(dag.getDagId(), dag);
         dagCostSoFar.put(dag.getDagId(), 0.0);
+        dagsArrivedCount++;
 
         System.out.println(String.format("[%s] [%.2f] DAG submitted: %s with %d tasks",
                 dag.getApplicationName(),
@@ -206,6 +211,7 @@ public class DagRuntimeManager extends SimEntity {
                 outputBytes));
 
         CloudSim.send(getId(), SimManager.getInstance().getId(), 0.0, 0, tp);
+        dagsWithScheduledTasks.add(dagId);
     }
 
     /**
@@ -433,10 +439,13 @@ public class DagRuntimeManager extends SimEntity {
 
             // Print total DAG runtime summary
             System.out.println("\n========== DAG EXECUTION SUMMARY ==========");
-            System.out.println("Total DAGs submitted: " + allDags.size());
+            System.out.println("Total DAGs configured: " + allDags.size());
+            System.out.println("Total DAGs arrived (DAG_SUBMIT processed): " + dagsArrivedCount);
+            System.out.println("Total DAGs with >=1 task scheduled: " + dagsWithScheduledTasks.size());
             System.out.println("Total DAG runtime (sum of makespans): " + totalDagRunTimeMs + " ms");
-            if (allDags.size() > 0) {
-                System.out.println("Average DAG makespan: " + (totalDagRunTimeMs / (double) allDags.size()) + " ms");
+            if (dagsWithScheduledTasks.size() > 0) {
+                System.out.println("Average DAG makespan (over scheduled DAGs): "
+                        + (totalDagRunTimeMs / (double) dagsWithScheduledTasks.size()) + " ms");
             }
             System.out.println("==========================================");
         } catch (Exception e) {
