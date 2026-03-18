@@ -13,8 +13,8 @@ def get_action():
     action = 0
     return jsonify({"action": action})
 
-@app.route('/send_reward_info', methods=['POST'])
-def send_reward_info():
+@app.route('/send_result', methods=['POST'])
+def send_result():
     data = request.json
     print("data received: ", data)
 

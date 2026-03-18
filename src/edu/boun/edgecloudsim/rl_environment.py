@@ -3,9 +3,8 @@ import gymnasium as gym
 from gymnasium import spaces
 
 class SchedulingEnvironment(gym.Env):
-    def __init__(self, num_dc = 8, num_dags=1000):
+    def __init__(self, num_dags=1000, num_edge_dc=5, num_cloud_dc=6):
         super().__init__()
-        self.num_dc = num_dc
         self.num_dags = num_dags
         self.current_step = 0
         self.max_steps = 1000
@@ -21,10 +20,15 @@ class SchedulingEnvironment(gym.Env):
         self.max_cost = 100.0
         self.max_latency = 100.0
 
-        OBSERVATION_SIZE = 2 + (5 * num_dc)
+        self.num_edge_dc = num_edge_dc
+        self.num_cloud_dc = num_cloud_dc
+        self.total_dc = self.num_edge_dc + self.num_cloud_dc
 
-        #action space: picking a data center
-        self.action_space = spaces.Discrete(num_dc)
+        OBSERVATION_SIZE = 2 + (5 * self.total_dc)
+
+        #action space: pick type, data center
+        self.max_dc = max(self.num_edge_dc, self.num_cloud_dc)
+        self.action_space = spaces.MultiDiscrete([2, self.max_dc])
 
         #observation/state space: receive task information + data center information
         self.observation_space = spaces.Box(low = 0, high = 1, shape=(OBSERVATION_SIZE, ), dtype=np.float32)
@@ -50,9 +54,9 @@ class SchedulingEnvironment(gym.Env):
         #compute reward
         #ready next task in priority queue
         #return observation, reward, terminated, truncated, info
-        self.current_cost = 0
-        self.current_time = 0
-        
+        self.current_cost = self.np_random.uniform(1, 100)
+        self.current_time = self.np_random.uniform(1, 100)
+
         reward = self._get_reward()
         
         dag_completed = False
@@ -86,7 +90,7 @@ class SchedulingEnvironment(gym.Env):
 
         dc_features = []
         #features of data center
-        for dc in range(self.num_dc):
+        for dc in range(self.total_dc):
             available_nodes = self.np_random.uniform(0, 1) #are there available nodes/vm in the data center
             utilization_capacity = self.np_random.uniform(0, 1) #what is the current load on the data center
             available_ram = self.np_random.uniform(0, 1)
@@ -101,19 +105,12 @@ class SchedulingEnvironment(gym.Env):
     def _is_terminated(self):
         return self.completed_dags == self.num_dags
 
-    #action masking
+    #action masking, edge/cloud -> data center
     def _get_action_mask(self):
-        mask = []
+        mask = np.ones((2, self.max_dc), dtype=bool)
         #check if current data center is available to schedule
-        for i in range(self.num_dc):
-            #is_available: True or False
-            is_available = True
-            mask.append(is_available)
-        
-        mask = np.array(mask, dtype=bool)
-
-        if not any(mask):
-            mask[0] = True
+        mask[0, self.num_edge_dc:] = False
+        mask[1, self.num_cloud_dc:] = False
         
         return mask
     
