@@ -117,6 +117,15 @@ public class SimSettings {
 	private String[] SIMULATION_SCENARIOS;
 	private String[] ORCHESTRATOR_POLICIES;
 	private String RL_SERVICE_URL;
+	private String DAG_INPUT_PATH;
+	private int RL_HTTP_TIMEOUT_MS;
+	private boolean RL_TRAINING_MODE;
+	private double RL_ALPHA_L;
+	private double RL_ALPHA_C;
+	private double RL_L_HAT;
+	private double RL_C_HAT;
+	private double RL_B_COST;
+	private double RL_BUDGET_PENALTY;
 	private double DAG_INTERARRIVAL_RATE;
 
 	// Geographic simulation boundaries
@@ -249,7 +258,17 @@ public class SimSettings {
 			ORCHESTRATOR_POLICIES = prop.getProperty("orchestrator_policies").split(",");
 
 			SIMULATION_SCENARIOS = prop.getProperty("simulation_scenarios").split(",");
-			RL_SERVICE_URL = prop.getProperty("rl_service_url", "http://localhost:5000/decide");
+			RL_SERVICE_URL = prop.getProperty("rl_service_url",
+					prop.getProperty("rl_server_url", "http://localhost:8000"));
+			DAG_INPUT_PATH = prop.getProperty("dag_input_path", "").trim();
+			RL_HTTP_TIMEOUT_MS = Integer.parseInt(prop.getProperty("http_timeout_ms", "5000"));
+			RL_TRAINING_MODE = Boolean.parseBoolean(prop.getProperty("training_mode", "true"));
+			RL_ALPHA_L = Double.parseDouble(prop.getProperty("alpha_l", "1.0"));
+			RL_ALPHA_C = Double.parseDouble(prop.getProperty("alpha_c", "1.0"));
+			RL_L_HAT = Double.parseDouble(prop.getProperty("l_hat", "1000.0"));
+			RL_C_HAT = Double.parseDouble(prop.getProperty("c_hat", "1.0"));
+			RL_B_COST = Double.parseDouble(prop.getProperty("b_cost", "100.0"));
+			RL_BUDGET_PENALTY = Double.parseDouble(prop.getProperty("budget_penalty", "-1.0"));
 			DAG_INTERARRIVAL_RATE = Double.parseDouble(prop.getProperty("dag_interarrival_rate", "60.0"));
 
 			NORTHERN_BOUND = Double.parseDouble(prop.getProperty("northern_bound", "0"));
@@ -580,6 +599,42 @@ public class SimSettings {
 
 	public String getRlServiceUrl() {
 		return RL_SERVICE_URL;
+	}
+
+	public String getDagInputPath() {
+		return DAG_INPUT_PATH;
+	}
+
+	public int getRlHttpTimeoutMs() {
+		return RL_HTTP_TIMEOUT_MS;
+	}
+
+	public boolean getRlTrainingMode() {
+		return RL_TRAINING_MODE;
+	}
+
+	public double getRlAlphaL() {
+		return RL_ALPHA_L;
+	}
+
+	public double getRlAlphaC() {
+		return RL_ALPHA_C;
+	}
+
+	public double getRlLHat() {
+		return RL_L_HAT;
+	}
+
+	public double getRlCHat() {
+		return RL_C_HAT;
+	}
+
+	public double getRlBudgetCost() {
+		return RL_B_COST;
+	}
+
+	public double getRlBudgetPenalty() {
+		return RL_BUDGET_PENALTY;
 	}
 
 	public double getDagInterarrivalRate() {

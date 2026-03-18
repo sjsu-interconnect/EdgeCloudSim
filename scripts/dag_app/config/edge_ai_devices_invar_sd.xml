@@ -1,0 +1,161 @@
+<?xml version="1.0" ?>
+<edge_devices>
+	<!--
+	INVAR-style synthetic topology for Stable Diffusion cost analysis.
+	Topology represented in this file: 4 edge data centers (paper synthetic style).
+	Cloud data center is created separately by EdgeCloudSim CloudServerManager.
+	User-to-edge "nearby" intent: users are grouped by nearest WLAN/edge site,
+	while built-in cloud remains available as a fallback to expose edge performance inversion effects.
+
+	SageMaker pricing basis (us-east-1 / N. Virginia, on-demand):
+	- Edge tier instance:   ml.g4dn.xlarge, $0.7364/hour
+	  costPerSec = 0.7364 / 3600 = 0.000204555556
+
+	Note: cloud-side pricing/sizing should be set in EdgeCloudSim cloud settings/manager.
+	-->
+
+	<!-- Edge datacenter 1 (nearby group A users) -->
+	<datacenter arch="x86" os="Linux" vmm="Xen">
+		<costPerBw>0.000000000000931</costPerBw>
+		<costPerSec>0.000204555556</costPerSec>
+		<costPerMem>0.000000</costPerMem>
+		<costPerStorage>0.000000</costPerStorage>
+		<location>
+			<x_pos>30</x_pos>
+			<y_pos>0</y_pos>
+			<wlan_id>0</wlan_id>
+			<attractiveness>1</attractiveness>
+		</location>
+		<hosts>
+			<host>
+				<core>8</core>
+				<mips>6000</mips>
+				<ram>16384</ram>
+				<storage>400000</storage>
+				<VMs>
+					<VM vmm="Xen">
+						<core>2</core>
+						<mips>1500</mips>
+						<ram>4096</ram>
+						<storage>100000</storage>
+					</VM>
+					<VM vmm="Xen">
+						<core>2</core>
+						<mips>1500</mips>
+						<ram>4096</ram>
+						<storage>100000</storage>
+					</VM>
+				</VMs>
+			</host>
+		</hosts>
+	</datacenter>
+
+	<!-- Edge datacenter 2 (nearby group B users) -->
+	<datacenter arch="x86" os="Linux" vmm="Xen">
+		<costPerBw>0.000000000000931</costPerBw>
+		<costPerSec>0.000204555556</costPerSec>
+		<costPerMem>0.000000</costPerMem>
+		<costPerStorage>0.000000</costPerStorage>
+		<location>
+			<x_pos>0</x_pos>
+			<y_pos>30</y_pos>
+			<wlan_id>1</wlan_id>
+			<attractiveness>1</attractiveness>
+		</location>
+		<hosts>
+			<host>
+				<core>8</core>
+				<mips>6000</mips>
+				<ram>16384</ram>
+				<storage>400000</storage>
+				<VMs>
+					<VM vmm="Xen">
+						<core>2</core>
+						<mips>1500</mips>
+						<ram>4096</ram>
+						<storage>100000</storage>
+					</VM>
+					<VM vmm="Xen">
+						<core>2</core>
+						<mips>1500</mips>
+						<ram>4096</ram>
+						<storage>100000</storage>
+					</VM>
+				</VMs>
+			</host>
+		</hosts>
+	</datacenter>
+
+	<!-- Edge datacenter 3 (nearby group C users) -->
+	<datacenter arch="x86" os="Linux" vmm="Xen">
+		<costPerBw>0.000000000000931</costPerBw>
+		<costPerSec>0.000204555556</costPerSec>
+		<costPerMem>0.000000</costPerMem>
+		<costPerStorage>0.000000</costPerStorage>
+		<location>
+			<x_pos>-30</x_pos>
+			<y_pos>0</y_pos>
+			<wlan_id>2</wlan_id>
+			<attractiveness>1</attractiveness>
+		</location>
+		<hosts>
+			<host>
+				<core>8</core>
+				<mips>6000</mips>
+				<ram>16384</ram>
+				<storage>400000</storage>
+				<VMs>
+					<VM vmm="Xen">
+						<core>2</core>
+						<mips>1500</mips>
+						<ram>4096</ram>
+						<storage>100000</storage>
+					</VM>
+					<VM vmm="Xen">
+						<core>2</core>
+						<mips>1500</mips>
+						<ram>4096</ram>
+						<storage>100000</storage>
+					</VM>
+				</VMs>
+			</host>
+		</hosts>
+	</datacenter>
+
+	<!-- Edge datacenter 4 (nearby group D users) -->
+	<datacenter arch="x86" os="Linux" vmm="Xen">
+		<costPerBw>0.000000000000931</costPerBw>
+		<costPerSec>0.000204555556</costPerSec>
+		<costPerMem>0.000000</costPerMem>
+		<costPerStorage>0.000000</costPerStorage>
+		<location>
+			<x_pos>0</x_pos>
+			<y_pos>-30</y_pos>
+			<wlan_id>3</wlan_id>
+			<attractiveness>1</attractiveness>
+		</location>
+		<hosts>
+			<host>
+				<core>8</core>
+				<mips>6000</mips>
+				<ram>16384</ram>
+				<storage>400000</storage>
+				<VMs>
+					<VM vmm="Xen">
+						<core>2</core>
+						<mips>1500</mips>
+						<ram>4096</ram>
+						<storage>100000</storage>
+					</VM>
+					<VM vmm="Xen">
+						<core>2</core>
+						<mips>1500</mips>
+						<ram>4096</ram>
+						<storage>100000</storage>
+					</VM>
+				</VMs>
+			</host>
+		</hosts>
+	</datacenter>
+
+</edge_devices>

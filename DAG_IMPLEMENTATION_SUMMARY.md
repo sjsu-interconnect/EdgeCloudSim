@@ -3,6 +3,16 @@
 ## Overview
 Successfully integrated DAG (Directed Acyclic Graph) support into EdgeCloudSim for simulating distributed ML/AI workload pipelines.
 
+## Update: Direct DAG File Input (Latest)
+
+- Added config key: `dag_input_path` in `scripts/dag_app/config/default_config.properties`
+- Simulator can now load DAGs from:
+  - a single JSON file (including `{ "dags": [...] }` container files like `synthetic_dags_1k.json`)
+  - or a directory of JSON files
+- Clarification:
+  - `synthetic_dags_1k.json` = **1000 DAG requests**
+  - not 1000 task nodes in one DAG
+
 ## Current Status ✅
 
 ### DAG Execution

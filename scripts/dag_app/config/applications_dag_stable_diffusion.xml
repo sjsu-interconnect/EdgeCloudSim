@@ -1,0 +1,99 @@
+<?xml version="1.0" ?>
+<applications>
+	<!-- Stable Diffusion DAG-like pipeline stages -->
+	<application name="base_model_load">
+		<usage_percentage>2</usage_percentage>
+		<prob_cloud_selection>35</prob_cloud_selection>
+		<poisson_interarrival>180</poisson_interarrival>
+		<delay_sensitivity>0</delay_sensitivity>
+		<active_period>60</active_period>
+		<idle_period>0</idle_period>
+		<data_upload>0</data_upload>
+		<data_download>0</data_download>
+		<task_length>32000</task_length>
+		<required_core>1</required_core>
+		<vm_utilization_on_edge>18</vm_utilization_on_edge>
+		<vm_utilization_on_cloud>10</vm_utilization_on_cloud>
+		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
+	</application>
+
+	<application name="text_encode">
+		<usage_percentage>18</usage_percentage>
+		<prob_cloud_selection>40</prob_cloud_selection>
+		<poisson_interarrival>3</poisson_interarrival>
+		<delay_sensitivity>0</delay_sensitivity>
+		<active_period>60</active_period>
+		<idle_period>0</idle_period>
+		<data_upload>16</data_upload>
+		<data_download>32</data_download>
+		<task_length>2200</task_length>
+		<required_core>1</required_core>
+		<vm_utilization_on_edge>38</vm_utilization_on_edge>
+		<vm_utilization_on_cloud>28</vm_utilization_on_cloud>
+		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
+	</application>
+
+	<application name="vae_encode">
+		<usage_percentage>10</usage_percentage>
+		<prob_cloud_selection>45</prob_cloud_selection>
+		<poisson_interarrival>6</poisson_interarrival>
+		<delay_sensitivity>0</delay_sensitivity>
+		<active_period>60</active_period>
+		<idle_period>0</idle_period>
+		<data_upload>2048</data_upload>
+		<data_download>512</data_download>
+		<task_length>3000</task_length>
+		<required_core>1</required_core>
+		<vm_utilization_on_edge>45</vm_utilization_on_edge>
+		<vm_utilization_on_cloud>35</vm_utilization_on_cloud>
+		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
+	</application>
+
+	<application name="unet_denoise">
+		<usage_percentage>45</usage_percentage>
+		<prob_cloud_selection>55</prob_cloud_selection>
+		<poisson_interarrival>1</poisson_interarrival>
+		<delay_sensitivity>0</delay_sensitivity>
+		<active_period>60</active_period>
+		<idle_period>0</idle_period>
+		<data_upload>512</data_upload>
+		<data_download>512</data_download>
+		<task_length>15000</task_length>
+		<required_core>2</required_core>
+		<vm_utilization_on_edge>92</vm_utilization_on_edge>
+		<vm_utilization_on_cloud>86</vm_utilization_on_cloud>
+		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
+	</application>
+
+	<application name="sampler">
+		<usage_percentage>15</usage_percentage>
+		<prob_cloud_selection>55</prob_cloud_selection>
+		<poisson_interarrival>2</poisson_interarrival>
+		<delay_sensitivity>0</delay_sensitivity>
+		<active_period>60</active_period>
+		<idle_period>0</idle_period>
+		<data_upload>128</data_upload>
+		<data_download>128</data_download>
+		<task_length>1800</task_length>
+		<required_core>1</required_core>
+		<vm_utilization_on_edge>42</vm_utilization_on_edge>
+		<vm_utilization_on_cloud>34</vm_utilization_on_cloud>
+		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
+	</application>
+
+	<application name="vae_decode">
+		<usage_percentage>10</usage_percentage>
+		<prob_cloud_selection>45</prob_cloud_selection>
+		<poisson_interarrival>3</poisson_interarrival>
+		<delay_sensitivity>0</delay_sensitivity>
+		<active_period>60</active_period>
+		<idle_period>0</idle_period>
+		<data_upload>512</data_upload>
+		<data_download>4096</data_download>
+		<task_length>5000</task_length>
+		<required_core>1</required_core>
+		<vm_utilization_on_edge>50</vm_utilization_on_edge>
+		<vm_utilization_on_cloud>36</vm_utilization_on_cloud>
+		<vm_utilization_on_mobile>0</vm_utilization_on_mobile>
+	</application>
+</applications>

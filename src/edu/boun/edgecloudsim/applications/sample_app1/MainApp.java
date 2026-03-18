@@ -138,27 +138,29 @@ public class MainApp {
 						SimManager manager = new SimManager(sampleFactory, j, simScenario, orchestratorPolicy);
 						// If DAGs are present, load and register DagRuntimeManager so DAG tasks are submitted
 						try {
-							// Try to find the dagsim directory by traversing up the directory tree
-							String dagDirPath = null;
-							java.io.File currentDir = new java.io.File(".").getAbsoluteFile();
-							// Traverse up to find EdgeCloudSim project root (contains bin and src folders)
-							while (currentDir != null && !currentDir.getName().equals("/")) {
-								java.io.File candidate = new java.io.File(currentDir, "src/edu/boun/edgecloudsim/dagsim");
-								if (candidate.isDirectory()) {
-									dagDirPath = candidate.getAbsolutePath();
-									break;
+							String dagInputPath = SS.getDagInputPath();
+							if (dagInputPath == null || dagInputPath.isEmpty()) {
+								// Backward-compatible fallback: find default dagsim dir
+								java.io.File currentDir = new java.io.File(".").getAbsoluteFile();
+								while (currentDir != null && !currentDir.getName().equals("/")) {
+									java.io.File candidate = new java.io.File(currentDir, "src/edu/boun/edgecloudsim/dagsim");
+									if (candidate.isDirectory()) {
+										dagInputPath = candidate.getAbsolutePath();
+										break;
+									}
+									currentDir = currentDir.getParentFile();
 								}
-								currentDir = currentDir.getParentFile();
 							}
-							if (dagDirPath != null) {
-								List<DagRecord> dags = DagJsonLoader.loadAllDags(dagDirPath);
+
+							if (dagInputPath != null && !dagInputPath.isEmpty()) {
+								List<DagRecord> dags = DagJsonLoader.loadDagsFromPath(dagInputPath);
 								if (dags != null && !dags.isEmpty()) {
 									DagRuntimeManager dagManager = new DagRuntimeManager("DagRuntime", dags);
 									dagManager.scheduleAllDagSubmissions();
-									SimLogger.printLine("Loaded " + dags.size() + " DAG(s) for simulation");
+									SimLogger.printLine("Loaded " + dags.size() + " DAG(s) for simulation from " + dagInputPath);
 								}
 							} else {
-								SimLogger.printLine("Warning: could not find dagsim directory in project");
+								SimLogger.printLine("Warning: DAG input path not set and fallback search failed");
 							}
 						} catch (IOException ioe) {
 							SimLogger.printLine("Warning: could not load DAGs: " + ioe.getMessage());

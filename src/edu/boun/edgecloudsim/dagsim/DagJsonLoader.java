@@ -104,6 +104,66 @@ public class DagJsonLoader {
     }
 
     /**
+     * Load DAGs from either a directory of JSON files or a single JSON file.
+     * Single-file mode supports both:
+     * - one DAG object
+     * - container object with "dags": [ ... ]
+     */
+    public static List<DagRecord> loadDagsFromPath(String path) throws IOException {
+        File f = new File(path);
+        if (f.isDirectory()) {
+            return loadAllDags(path);
+        }
+        if (!f.isFile()) {
+            throw new IOException("DAG path is neither a file nor directory: " + path);
+        }
+
+        List<DagRecord> dags = new ArrayList<>();
+        try (FileReader reader = new FileReader(f)) {
+            JsonElement elem = JsonParser.parseReader(reader);
+            if (!elem.isJsonObject()) {
+                throw new IOException("Invalid DAG JSON root in " + path);
+            }
+            JsonObject root = elem.getAsJsonObject();
+            if (root.has("dags") && root.get("dags").isJsonArray()) {
+                JsonArray arr = root.getAsJsonArray("dags");
+                for (JsonElement dagElem : arr) {
+                    if (dagElem.isJsonObject()) {
+                        DagRecord dag = parseSingleDag(dagElem.getAsJsonObject());
+                        if (dag != null) {
+                            dags.add(dag);
+                        }
+                    }
+                }
+            } else {
+                DagRecord dag = parseSingleDag(root);
+                if (dag != null) {
+                    dags.add(dag);
+                }
+            }
+        }
+
+        dags.sort(Comparator.comparingDouble(DagRecord::getSubmissionTimeEpochSec));
+        if (!dags.isEmpty()) {
+            double warmUpOffsetMs = SimSettings.getInstance().getWarmUpPeriod() * 1000.0;
+            double interArrivalMeanSec = SimSettings.getInstance().getDagInterarrivalRate();
+            ExponentialDistribution expDist = new ExponentialDistribution(interArrivalMeanSec * 1000.0);
+            if (SimSettings.getInstance().hasRngSeed()) {
+                expDist.reseedRandomGenerator(SimSettings.getInstance().getRngSeed() + 999);
+            }
+            double currentSubmitTimeMs = warmUpOffsetMs;
+            for (DagRecord dag : dags) {
+                currentSubmitTimeMs += expDist.sample();
+                dag.setSubmitAtSimMs((long) currentSubmitTimeMs);
+            }
+        }
+
+        System.out.println("Loaded " + dags.size() + " DAGs from " + path + " with Poisson arrival (mean="
+                + SimSettings.getInstance().getDagInterarrivalRate() + "s)");
+        return dags;
+    }
+
+    /**
      * Load a single DAG from a JSON file or array of DAGs.
      */
     private static DagRecord loadDagFromJson(File jsonFile) throws IOException {
