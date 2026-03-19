@@ -149,10 +149,11 @@ public class DefaultCloudServerManager extends CloudServerManager {
 		String arch = "x86";
 		String os = "Linux";
 		String vmm = "Xen";
-		double costPerBw = 0;
-		double costPerSec = 0;
-		double costPerMem = 0;
-		double costPerStorage = 0;
+		SimSettings ss = SimSettings.getInstance();
+		double costPerBw = ss.getCloudCostPerBw();
+		double costPerSec = ss.getCloudCostPerSec();
+		double costPerMem = ss.getCloudCostPerMem();
+		double costPerStorage = ss.getCloudCostPerStorage();
 
 		List<Host> hostList = createHosts();
 
@@ -171,14 +172,13 @@ public class DefaultCloudServerManager extends CloudServerManager {
 		VmAllocationPolicy vm_policy = getVmAllocationPolicy(hostList, index);
 		datacenter = new Datacenter(name, characteristics, vm_policy, storageList, 0);
 
-		// Register cloud datacenter costs in SimSettings
-		// Using realistic public cloud pricing (e.g., $0.75/hour for GPU compute and
-		// low egress)
+		// Register cloud datacenter costs in SimSettings (configurable; by default cloud
+		// compute is derived as multiplier x edge compute cost).
 		SimSettings.datacenterCosts.put(datacenter.getId(), new Double[] {
-				0.00000000009, // costPerBw ($0.09 per GB)
-				0.0002083333, // costPerSec ($0.75 per hour)
-				0.0, // costPerMem
-				0.0 // costPerStorage
+				costPerBw,
+				costPerSec,
+				costPerMem,
+				costPerStorage
 		});
 
 		return datacenter;

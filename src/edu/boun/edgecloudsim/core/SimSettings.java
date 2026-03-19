@@ -106,6 +106,13 @@ public class SimSettings {
 	private int MIPS_FOR_CLOUD_VM; // Processing power (MIPS)
 	private int RAM_FOR_CLOUD_VM; // Memory allocation (MB)
 	private int STORAGE_FOR_CLOUD_VM; // Storage allocation (Bytes)
+	private double CLOUD_COST_PER_SEC_CONFIG; // If < 0, derive from edge cost
+	private double CLOUD_COST_PER_BW_CONFIG;
+	private double CLOUD_COST_PER_MEM_CONFIG;
+	private double CLOUD_COST_PER_STORAGE_CONFIG;
+	private double CLOUD_COST_MULTIPLIER_VS_EDGE;
+	private double EDGE_AVG_COST_PER_SEC;
+	private double EDGE_AVG_COST_PER_BW;
 
 	// Edge VM resource configuration parameters
 	private int CORE_FOR_VM; // CPU cores for edge VMs
@@ -249,6 +256,11 @@ public class SimSettings {
 			MIPS_FOR_CLOUD_VM = Integer.parseInt(prop.getProperty("mips_for_cloud_vm"));
 			RAM_FOR_CLOUD_VM = Integer.parseInt(prop.getProperty("ram_for_cloud_vm"));
 			STORAGE_FOR_CLOUD_VM = Integer.parseInt(prop.getProperty("storage_for_cloud_vm"));
+			CLOUD_COST_PER_SEC_CONFIG = Double.parseDouble(prop.getProperty("cloud_cost_per_sec", "-1.0"));
+			CLOUD_COST_PER_BW_CONFIG = Double.parseDouble(prop.getProperty("cloud_cost_per_bw", "0.00000000009"));
+			CLOUD_COST_PER_MEM_CONFIG = Double.parseDouble(prop.getProperty("cloud_cost_per_mem", "0.0"));
+			CLOUD_COST_PER_STORAGE_CONFIG = Double.parseDouble(prop.getProperty("cloud_cost_per_storage", "0.0"));
+			CLOUD_COST_MULTIPLIER_VS_EDGE = Double.parseDouble(prop.getProperty("cloud_cost_multiplier_vs_edge", "5.0"));
 
 			RAM_FOR_VM = Integer.parseInt(prop.getProperty("ram_for_mobile_vm"));
 			CORE_FOR_VM = Integer.parseInt(prop.getProperty("core_for_mobile_vm"));
@@ -553,6 +565,37 @@ public class SimSettings {
 		return STORAGE_FOR_CLOUD_VM;
 	}
 
+	public double getCloudCostPerSec() {
+		if (CLOUD_COST_PER_SEC_CONFIG >= 0.0) {
+			return CLOUD_COST_PER_SEC_CONFIG;
+		}
+		return getEdgeAvgCostPerSec() * CLOUD_COST_MULTIPLIER_VS_EDGE;
+	}
+
+	public double getCloudCostPerBw() {
+		return CLOUD_COST_PER_BW_CONFIG;
+	}
+
+	public double getCloudCostPerMem() {
+		return CLOUD_COST_PER_MEM_CONFIG;
+	}
+
+	public double getCloudCostPerStorage() {
+		return CLOUD_COST_PER_STORAGE_CONFIG;
+	}
+
+	public double getCloudCostMultiplierVsEdge() {
+		return CLOUD_COST_MULTIPLIER_VS_EDGE;
+	}
+
+	public double getEdgeAvgCostPerSec() {
+		return EDGE_AVG_COST_PER_SEC > 0.0 ? EDGE_AVG_COST_PER_SEC : 0.0002083333;
+	}
+
+	public double getEdgeAvgCostPerBw() {
+		return EDGE_AVG_COST_PER_BW > 0.0 ? EDGE_AVG_COST_PER_BW : 0.00000000009;
+	}
+
 	/**
 	 * returns RAM of the mobile (processing unit) VMs
 	 */
@@ -855,6 +898,10 @@ public class SimSettings {
 			edgeDevicesDoc = dBuilder.parse(devicesFile);
 			edgeDevicesDoc.getDocumentElement().normalize();
 
+			double sumEdgeCostPerSec = 0.0;
+			double sumEdgeCostPerBw = 0.0;
+			int edgeDcCount = 0;
+
 			NodeList datacenterList = edgeDevicesDoc.getElementsByTagName("datacenter");
 			for (int i = 0; i < datacenterList.getLength(); i++) {
 				NUM_OF_EDGE_DATACENTERS++;
@@ -868,6 +915,13 @@ public class SimSettings {
 				isElementPresent(datacenterElement, "costPerSec");
 				isElementPresent(datacenterElement, "costPerMem");
 				isElementPresent(datacenterElement, "costPerStorage");
+				double edgeCostPerBw = Double
+						.parseDouble(datacenterElement.getElementsByTagName("costPerBw").item(0).getTextContent());
+				double edgeCostPerSec = Double
+						.parseDouble(datacenterElement.getElementsByTagName("costPerSec").item(0).getTextContent());
+				sumEdgeCostPerBw += edgeCostPerBw;
+				sumEdgeCostPerSec += edgeCostPerSec;
+				edgeDcCount++;
 
 				Element location = (Element) datacenterElement.getElementsByTagName("location").item(0);
 				isElementPresent(location, "attractiveness");
@@ -904,6 +958,10 @@ public class SimSettings {
 						isElementPresent(vmElement, "storage");
 					}
 				}
+			}
+			if (edgeDcCount > 0) {
+				EDGE_AVG_COST_PER_SEC = sumEdgeCostPerSec / (double) edgeDcCount;
+				EDGE_AVG_COST_PER_BW = sumEdgeCostPerBw / (double) edgeDcCount;
 			}
 
 		} catch (Exception e) {

@@ -202,9 +202,16 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 				// Extract cost parameters from the centralized registry in SimSettings
 				Double[] costs = SimSettings.datacenterCosts.get(datacenterId);
 
-				// Fallback to sensible default values if datacenter is still not registered
-				double costPerBw = (costs != null) ? costs[0] : 0.00000000009; // Default cloud egress rate
-				double costPerSec = (costs != null) ? costs[1] : 0.0002083333; // Default cloud compute rate
+				// Fallback to settings-driven values if datacenter is still not registered
+				boolean isCloudTask = task.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID;
+				double costPerBw = (costs != null)
+						? costs[0]
+						: (isCloudTask ? SimSettings.getInstance().getCloudCostPerBw()
+								: SimSettings.getInstance().getEdgeAvgCostPerBw());
+				double costPerSec = (costs != null)
+						? costs[1]
+						: (isCloudTask ? SimSettings.getInstance().getCloudCostPerSec()
+								: SimSettings.getInstance().getEdgeAvgCostPerSec());
 				double costPerMem = (costs != null) ? costs[2] : 0.0;
 				double costPerStorage = (costs != null) ? costs[3] : 0.0;
 
