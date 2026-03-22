@@ -182,6 +182,11 @@ public class RemoteRLPolicy implements SchedulingPolicy {
                         vmObj.addProperty("dcId", vm.datacenterId);
                         vmObj.addProperty("vmId", vm.vmId);
                         vmObj.addProperty("availableMips", vm.mips);
+                        vmObj.addProperty(
+                                "costPerSec",
+                                tier == PlacementDecision.TIER_EDGE
+                                        ? SimSettings.getInstance().getEdgeAvgCostPerSec()
+                                        : SimSettings.getInstance().getCloudCostPerSec());
                         double util = vm.queuedTaskCount <= 0 ? 0.0
                                 : Math.min(1.0, vm.queuedTaskCount / (double) (vm.queuedTaskCount + 1));
                         vmObj.addProperty("utilization", util);
