@@ -3,7 +3,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 class SchedulingEnvironment(gym.Env):
-    def __init__(self, num_dags=1000, num_edge_dc=5, num_cloud_dc=6):
+    def __init__(self, num_dags=1000, num_edge_dc=8, num_cloud_dc=1):
         super().__init__()
         self.num_dags = num_dags
         self.current_step = 0
@@ -24,7 +24,7 @@ class SchedulingEnvironment(gym.Env):
         self.num_cloud_dc = num_cloud_dc
         self.total_dc = self.num_edge_dc + self.num_cloud_dc
 
-        OBSERVATION_SIZE = 2 + (5 * self.total_dc)
+        OBSERVATION_SIZE = 2 + (6 * self.total_dc)
 
         #action space: pick type, data center
         self.max_dc = max(self.num_edge_dc, self.num_cloud_dc)
@@ -76,27 +76,41 @@ class SchedulingEnvironment(gym.Env):
         reward = -((self.alpha_latency * normalized_latency) + (self.alpha_cost * normalized_cost))
         return reward
 
-    def _get_obs(self, data=None):
+    def _get_obs(self, state=None):
         #internal state to observation state representation, do not concern about vms within data center
+        if state is None:
+            return np.zeros(self.observation_space.shape, dtype=np.float32)
+        
+        task = state["task"]
+        clusterState = state["cluster"]
+        budget = state["budget"]
+        queue_length = state["queue"]
+        time = state["time"]
+        
+        #global features
+        #number of tasks in queue for vms on dc, amount of money used, active dags
 
         #features of current task
-        task_features = []
-        #load on cpu
-        task_cpu = self.np_random.uniform(0, 1)
-        #load on memory
-        task_memory = self.np_random.uniform(0, 1)
-        task_features.append(task_cpu)
-        task_features.append(task_memory)
+        #mips, size of task
+        #need to normalize
+        task_features = [
+            self.normalize(task.get("mi", 0.0) / 1000.0),
+            self.normalize(task.get("dataSizeBytes", 0.0) / (10 * 1024 * 1024)),
+        ]
 
-        dc_features = []
         #features of data center
-        for dc in range(self.total_dc):
-            available_nodes = self.np_random.uniform(0, 1) #are there available nodes/vm in the data center
-            utilization_capacity = self.np_random.uniform(0, 1) #what is the current load on the data center
-            available_ram = self.np_random.uniform(0, 1)
-            available_cpu = self.np_random.uniform(0, 1)
-            queue_length = self.np_random.uniform(0, 1) #number of tasks waiting to start
-            dc_features.extend([available_nodes, utilization_capacity, available_ram, available_cpu, queue_length])
+        dc_features = []
+        edge_dc_vms = clusterState.get("edgeVms", [])
+        cloud_dc_vms = clusterState.get("cloudVms", [])
+
+        #get features of each tier dc based on vm info
+        for dc_id in range(self.num_edge_dc):
+            features = self._get_data_center_features(edge_dc_vms, dc_id)
+            dc_features.extend(features)
+        
+        for dc_id in range(self.num_cloud_dc):
+            features = self._get_data_center_features(cloud_dc_vms, dc_id)
+            dc_features.extend(features)
 
         obs = np.array(task_features + dc_features, dtype=np.float32)
         
@@ -106,17 +120,29 @@ class SchedulingEnvironment(gym.Env):
         return self.completed_dags == self.num_dags
 
     #action masking, edge/cloud -> data center
-    def _get_action_mask(self):
-        mask = np.ones((2, self.max_dc), dtype=bool)
-        #check if current data center is available to schedule
-        mask[0, self.num_edge_dc:] = False
-        mask[1, self.num_cloud_dc:] = False
+    def _get_action_mask(self, state):
+        mask = np.zeros((2, self.max_dc), dtype=bool)
+
+        #in current state, get edge and cloud vms
+        current_state = state["cluster"]
+        edge_vms = current_state.get("edgeVms", [])
+        cloud_vms = current_state.get("cloudVms", [])
+        
+        #get data center id from vm and check
+        for vm in edge_vms:
+            dc_id = vm["dcId"]
+            if 0 <= dc_id < self.max_dc:
+                mask[0, dc_id] = True
+        
+        for vm in cloud_vms:
+            dc_id = vm["dcId"]
+            if 0 <= dc_id < self.max_dc:
+                mask[1, dc_id] = True
         
         return mask
     
     def _get_info(self):
         return {
-            "action_mask": self._get_action_mask(),
             "dags_completed": self.completed_dags,
             "cost": self.current_cost,
             "time_taken": self.current_time
@@ -124,3 +150,25 @@ class SchedulingEnvironment(gym.Env):
 
     def render(self):
         pass
+
+    def normalize(self, value):
+        return float(np.clip(value, 0.0, 1.0))
+    
+    def _get_data_center_features(self, vm_list, dc_id):
+        dc_vms = [vm for vm in vm_list if vm["dcId"] == dc_id]
+
+        vm_count = len(dc_vms)
+        has_available_vm = 1.0 if vm_count > 0 else 0.0
+        total_available_mips = sum(vm["availableMips"] for vm in dc_vms)
+        avg_available_mips = total_available_mips / vm_count if vm_count > 0 else 0.0
+        avg_utilization = sum(vm["utilization"] for vm in dc_vms) / vm_count if vm_count > 0 else 0.0
+        total_queue_len = sum(vm["queueLen"] for vm in dc_vms)
+
+        return [
+            self.normalize(vm_count / 10.0),
+            self.normalize(avg_available_mips / 10000.0),
+            self.normalize(total_available_mips / 50000.0),
+            self.normalize(avg_utilization),
+            self.normalize(total_queue_len / 100.0),
+            has_available_vm
+        ]
