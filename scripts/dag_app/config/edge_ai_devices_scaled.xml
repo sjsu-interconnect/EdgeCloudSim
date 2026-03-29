@@ -14,9 +14,9 @@
 		<hosts>
 			<host>
 				<core>32</core>
-				<mips>16000</mips>
+				<mips>32000</mips>
 				<ram>64000</ram>
-				<storage>1000000</storage>
+				<storage>1600000</storage>
 				<VMs>
 					<VM vmm="Xen">
 						<core>4</core>
@@ -85,9 +85,9 @@
 		<hosts>
 			<host>
 				<core>32</core>
-				<mips>16000</mips>
+				<mips>32000</mips>
 				<ram>64000</ram>
-				<storage>1000000</storage>
+				<storage>1600000</storage>
 				<VMs>
 					<VM vmm="Xen">
 						<core>4</core>
@@ -156,9 +156,9 @@
 		<hosts>
 			<host>
 				<core>32</core>
-				<mips>16000</mips>
+				<mips>32000</mips>
 				<ram>64000</ram>
-				<storage>1000000</storage>
+				<storage>1600000</storage>
 				<VMs>
 					<VM vmm="Xen">
 						<core>4</core>
@@ -227,9 +227,9 @@
 		<hosts>
 			<host>
 				<core>32</core>
-				<mips>16000</mips>
+				<mips>32000</mips>
 				<ram>64000</ram>
-				<storage>1000000</storage>
+				<storage>1600000</storage>
 				<VMs>
 					<VM vmm="Xen">
 						<core>4</core>
@@ -298,9 +298,9 @@
 		<hosts>
 			<host>
 				<core>32</core>
-				<mips>16000</mips>
+				<mips>32000</mips>
 				<ram>64000</ram>
-				<storage>1000000</storage>
+				<storage>1600000</storage>
 				<VMs>
 					<VM vmm="Xen">
 						<core>4</core>
