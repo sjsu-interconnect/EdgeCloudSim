@@ -75,3 +75,8 @@ coverage.xml
 
 /scripts/output/
 misc/
+
+
+synthetic_dags_100k_container.json
+synthetic_dags_10k_container.json
+synthetic_dags_25k_container.json
