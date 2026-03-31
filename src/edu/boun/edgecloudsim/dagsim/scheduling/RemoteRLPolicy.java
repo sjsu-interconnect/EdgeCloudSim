@@ -154,6 +154,8 @@ public class RemoteRLPolicy implements SchedulingPolicy {
         root.add("task", taskObj);
 
         JsonArray vms = new JsonArray();
+        JsonArray edgeVms = new JsonArray();
+        JsonArray cloudVms = new JsonArray();
         int totalQueue = 0;
 
         double edgeMips = 0.0;
@@ -196,12 +198,14 @@ public class RemoteRLPolicy implements SchedulingPolicy {
 
                         if (tier == PlacementDecision.TIER_EDGE) {
                             vms.add(vmObj);
+                            edgeVms.add(vmObj);
                             edgeMips += vm.mips;
                             edgeUtil += util;
                             edgeCount++;
                             edgeQueue += vm.queuedTaskCount;
                         } else {
                             vms.add(vmObj);
+                            cloudVms.add(vmObj);
                             cloudMips += vm.mips;
                             cloudUtil += util;
                             cloudCount++;
@@ -213,6 +217,8 @@ public class RemoteRLPolicy implements SchedulingPolicy {
         }
 
         sortVmArray(vms);
+        sortVmArray(edgeVms);
+        sortVmArray(cloudVms);
 
         JsonObject edgeAgg = new JsonObject();
         edgeAgg.addProperty("availableMips", edgeMips);
@@ -249,6 +255,16 @@ public class RemoteRLPolicy implements SchedulingPolicy {
         graphObj.add("global", globalObj);
         graphObj.add("vms", vms);
         root.add("graph", graphObj);
+
+        // Backward-compatible fields for existing RL service schemas
+        JsonObject clusterObj = new JsonObject();
+        clusterObj.add("edgeVms", edgeVms);
+        clusterObj.add("cloudVms", cloudVms);
+        clusterObj.add("edge", edgeAgg);
+        clusterObj.add("cloud", cloudAgg);
+        root.add("cluster", clusterObj);
+        root.add("queue", queueObj);
+        root.add("time", timeObj);
 
         return root;
     }
