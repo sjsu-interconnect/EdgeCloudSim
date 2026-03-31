@@ -153,17 +153,17 @@ public class RemoteRLPolicy implements SchedulingPolicy {
         taskObj.addProperty("dataSizeBytes", Math.max(1.0, task.cpuMemoryMb * 1024.0 * 1024.0));
         root.add("task", taskObj);
 
-        JsonObject clusterObj = new JsonObject();
-        JsonArray edgeVms = new JsonArray();
-        JsonArray cloudVms = new JsonArray();
+        JsonArray vms = new JsonArray();
         int totalQueue = 0;
 
         double edgeMips = 0.0;
         double edgeUtil = 0.0;
         int edgeCount = 0;
+        int edgeQueue = 0;
         double cloudMips = 0.0;
         double cloudUtil = 0.0;
         int cloudCount = 0;
+        int cloudQueue = 0;
 
         if (state.vms != null) {
             for (int tier = 0; tier < state.vms.length; tier++) {
@@ -179,6 +179,7 @@ public class RemoteRLPolicy implements SchedulingPolicy {
                             continue;
                         }
                         JsonObject vmObj = new JsonObject();
+                        vmObj.addProperty("tier", tier);
                         vmObj.addProperty("dcId", vm.datacenterId);
                         vmObj.addProperty("vmId", vm.vmId);
                         vmObj.addProperty("availableMips", vm.mips);
@@ -194,38 +195,34 @@ public class RemoteRLPolicy implements SchedulingPolicy {
                         totalQueue += vm.queuedTaskCount;
 
                         if (tier == PlacementDecision.TIER_EDGE) {
-                            edgeVms.add(vmObj);
+                            vms.add(vmObj);
                             edgeMips += vm.mips;
                             edgeUtil += util;
                             edgeCount++;
+                            edgeQueue += vm.queuedTaskCount;
                         } else {
-                            cloudVms.add(vmObj);
+                            vms.add(vmObj);
                             cloudMips += vm.mips;
                             cloudUtil += util;
                             cloudCount++;
+                            cloudQueue += vm.queuedTaskCount;
                         }
                     }
                 }
             }
         }
 
-        sortVmArray(edgeVms);
-        sortVmArray(cloudVms);
-        clusterObj.add("edgeVms", edgeVms);
-        clusterObj.add("cloudVms", cloudVms);
+        sortVmArray(vms);
 
         JsonObject edgeAgg = new JsonObject();
         edgeAgg.addProperty("availableMips", edgeMips);
         edgeAgg.addProperty("utilization", edgeCount > 0 ? edgeUtil / edgeCount : 0.0);
-        edgeAgg.addProperty("queueLen", sumQueue(edgeVms));
-        clusterObj.add("edge", edgeAgg);
+        edgeAgg.addProperty("queueLen", edgeQueue);
 
         JsonObject cloudAgg = new JsonObject();
         cloudAgg.addProperty("availableMips", cloudMips);
         cloudAgg.addProperty("utilization", cloudCount > 0 ? cloudUtil / cloudCount : 0.0);
-        cloudAgg.addProperty("queueLen", sumQueue(cloudVms));
-        clusterObj.add("cloud", cloudAgg);
-        root.add("cluster", clusterObj);
+        cloudAgg.addProperty("queueLen", cloudQueue);
 
         JsonObject budgetObj = new JsonObject();
         double remaining = budget - costSoFar;
@@ -237,11 +234,21 @@ public class RemoteRLPolicy implements SchedulingPolicy {
         JsonObject queueObj = new JsonObject();
         queueObj.addProperty("activeDagCount", activeDagCount);
         queueObj.addProperty("totalQueueLen", totalQueue);
-        root.add("queue", queueObj);
 
         JsonObject timeObj = new JsonObject();
         timeObj.addProperty("simTime", state.currentTimeMs);
-        root.add("time", timeObj);
+
+        JsonObject globalObj = new JsonObject();
+        globalObj.add("edge", edgeAgg);
+        globalObj.add("cloud", cloudAgg);
+        globalObj.add("budget", budgetObj);
+        globalObj.add("queue", queueObj);
+        globalObj.add("time", timeObj);
+
+        JsonObject graphObj = new JsonObject();
+        graphObj.add("global", globalObj);
+        graphObj.add("vms", vms);
+        root.add("graph", graphObj);
 
         return root;
     }
@@ -270,22 +277,14 @@ public class RemoteRLPolicy implements SchedulingPolicy {
         return arr;
     }
 
-    private static int sumQueue(JsonArray vmArray) {
-        int total = 0;
-        for (JsonElement e : vmArray) {
-            JsonObject vm = e.getAsJsonObject();
-            total += vm.get("queueLen").getAsInt();
-        }
-        return total;
-    }
-
     private static void sortVmArray(JsonArray arr) {
         List<JsonObject> list = new ArrayList<>();
         for (JsonElement e : arr) {
             list.add(e.getAsJsonObject());
         }
         list.sort(Comparator
-                .comparingInt((JsonObject o) -> o.get("dcId").getAsInt())
+                .comparingInt((JsonObject o) -> o.has("tier") ? o.get("tier").getAsInt() : 0)
+                .thenComparingInt(o -> o.get("dcId").getAsInt())
                 .thenComparingInt(o -> o.get("vmId").getAsInt()));
         while (arr.size() > 0) {
             arr.remove(arr.size() - 1);
