@@ -39,9 +39,14 @@ import java.util.Map;
 import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
 
+import org.cloudbus.cloudsim.Host;
+
+import edu.boun.edgecloudsim.cloud_server.CloudVM;
 import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
 import edu.boun.edgecloudsim.core.SimSettings.NETWORK_DELAY_TYPES;
+import edu.boun.edgecloudsim.edge_client.mobile_processing_unit.MobileVM;
+import edu.boun.edgecloudsim.edge_server.EdgeVM;
 import edu.boun.edgecloudsim.utils.SimLogger.NETWORK_ERRORS;
 
 /**
@@ -1217,6 +1222,20 @@ public class SimLogger {
 				+ String.format("%.6f", totalVmLoadOnCloud / (double) vmLoadList.size()) + "/"
 				+ String.format("%.6f", totalVmLoadOnMobile / (double) vmLoadList.size()));
 
+		double avgEdgeRaw = totalVmLoadOnEdge / (double) vmLoadList.size();
+		double avgCloudRaw = totalVmLoadOnCloud / (double) vmLoadList.size();
+		double avgMobileRaw = totalVmLoadOnMobile / (double) vmLoadList.size();
+		double edgeCoreAvg = getAvgCoresPerVmEdge();
+		double cloudCoreAvg = getAvgCoresPerVmCloud();
+		double mobileCoreAvg = getAvgCoresPerVmMobile();
+		double edgeNormPct = edgeCoreAvg > 0 ? (avgEdgeRaw / edgeCoreAvg) * 100.0 : 0.0;
+		double cloudNormPct = cloudCoreAvg > 0 ? (avgCloudRaw / cloudCoreAvg) * 100.0 : 0.0;
+		double mobileNormPct = mobileCoreAvg > 0 ? (avgMobileRaw / mobileCoreAvg) * 100.0 : 0.0;
+		printLine("average server utilization (per-core %): "
+				+ String.format("%.2f", edgeNormPct) + "/"
+				+ String.format("%.2f", cloudNormPct) + "/"
+				+ String.format("%.2f", mobileNormPct));
+
 		double avgCost = completedTask[numOfAppTypes] > 0 ? cost[numOfAppTypes] / completedTask[numOfAppTypes] : 0.0;
 		double avgCostPerDag = completedDagCount > 0 ? cost[numOfAppTypes] / (double) completedDagCount : 0.0;
 		double avgBwCost = completedTask[numOfAppTypes] > 0 ? bwCost[numOfAppTypes] / completedTask[numOfAppTypes]
@@ -1247,6 +1266,60 @@ public class SimLogger {
 		taskMap.clear();
 		vmLoadList.clear();
 		apDelayList.clear();
+	}
+
+	private double getAvgCoresPerVmEdge() {
+		double totalCores = 0;
+		double vmCount = 0;
+		for (int i = 0; i < SimManager.getInstance().getEdgeServerManager().getDatacenterList().size(); i++) {
+			List<? extends Host> hosts = SimManager.getInstance().getEdgeServerManager().getDatacenterList().get(i)
+					.getHostList();
+			for (int j = 0; j < hosts.size(); j++) {
+				List<EdgeVM> vms = SimManager.getInstance().getEdgeServerManager().getVmList(hosts.get(j).getId());
+				for (int vmIndex = 0; vmIndex < vms.size(); vmIndex++) {
+					totalCores += vms.get(vmIndex).getNumberOfPes();
+					vmCount++;
+				}
+			}
+		}
+		return vmCount > 0 ? totalCores / vmCount : 0.0;
+	}
+
+	private double getAvgCoresPerVmCloud() {
+		if (SimManager.getInstance().getCloudServerManager().getDatacenter() == null) {
+			return 0.0;
+		}
+		double totalCores = 0;
+		double vmCount = 0;
+		List<? extends Host> hosts = SimManager.getInstance().getCloudServerManager().getDatacenter().getHostList();
+		for (int hostIndex = 0; hostIndex < hosts.size(); hostIndex++) {
+			List<CloudVM> vms = SimManager.getInstance().getCloudServerManager().getVmList(hostIndex);
+			for (int vmIndex = 0; vmIndex < vms.size(); vmIndex++) {
+				totalCores += vms.get(vmIndex).getNumberOfPes();
+				vmCount++;
+			}
+		}
+		return vmCount > 0 ? totalCores / vmCount : 0.0;
+	}
+
+	private double getAvgCoresPerVmMobile() {
+		if (SimManager.getInstance().getMobileServerManager().getDatacenter() == null) {
+			return 0.0;
+		}
+		double totalCores = 0;
+		double vmCount = 0;
+		List<? extends Host> hosts = SimManager.getInstance().getMobileServerManager().getDatacenter().getHostList();
+		for (int hostIndex = 0; hostIndex < hosts.size(); hostIndex++) {
+			List<MobileVM> vms = SimManager.getInstance().getMobileServerManager().getVmList(hostIndex);
+			if (vms == null) {
+				continue;
+			}
+			for (int vmIndex = 0; vmIndex < vms.size(); vmIndex++) {
+				totalCores += vms.get(vmIndex).getNumberOfPes();
+				vmCount++;
+			}
+		}
+		return vmCount > 0 ? totalCores / vmCount : 0.0;
 	}
 
 	/**
