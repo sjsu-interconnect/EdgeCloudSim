@@ -104,8 +104,14 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
                 EdgeVM evm = edgeVms.get(vmIdx);
                 state.vms[PlacementDecision.TIER_EDGE][dc][vmIdx] = new ClusterState.VMInfo(
                         evm.getId(), dc, PlacementDecision.TIER_EDGE, evm.getMips());
-                state.vms[PlacementDecision.TIER_EDGE][dc][vmIdx].queuedTaskCount = evm.getCloudletScheduler()
-                        .getCloudletExecList().size();
+                ClusterState.VMInfo info = state.vms[PlacementDecision.TIER_EDGE][dc][vmIdx];
+                info.queuedTaskCount = evm.getCloudletScheduler().getCloudletExecList().size();
+                double util = evm.getCloudletScheduler().getTotalUtilizationOfCpu(CloudSim.clock());
+                util = Math.max(0.0, Math.min(1.0, util));
+                double ramMb = evm.getRam();
+                info.freeMemoryMb = Math.max(0.0, ramMb * (1.0 - util));
+                // Approximate GPU memory capacity using RAM until GPU model is explicit.
+                info.freeGpuMemoryMb = Math.max(0.0, ramMb * (1.0 - util));
             }
         }
 
@@ -118,8 +124,13 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
             CloudVM cvm = cloudVms.get(vmIdx);
             state.vms[PlacementDecision.TIER_CLOUD][0][vmIdx] = new ClusterState.VMInfo(
                     cvm.getId(), 0, PlacementDecision.TIER_CLOUD, cvm.getMips());
-            state.vms[PlacementDecision.TIER_CLOUD][0][vmIdx].queuedTaskCount = cvm.getCloudletScheduler()
-                    .getCloudletExecList().size();
+            ClusterState.VMInfo info = state.vms[PlacementDecision.TIER_CLOUD][0][vmIdx];
+            info.queuedTaskCount = cvm.getCloudletScheduler().getCloudletExecList().size();
+            double util = cvm.getCloudletScheduler().getTotalUtilizationOfCpu(CloudSim.clock());
+            util = Math.max(0.0, Math.min(1.0, util));
+            double ramMb = cvm.getRam();
+            info.freeMemoryMb = Math.max(0.0, ramMb * (1.0 - util));
+            info.freeGpuMemoryMb = Math.max(0.0, ramMb * (1.0 - util));
         }
 
         return state;
