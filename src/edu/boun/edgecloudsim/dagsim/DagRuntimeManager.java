@@ -399,6 +399,18 @@ public class DagRuntimeManager extends SimEntity {
         return null;
     }
 
+    /**
+     * Returns true if there are DAGs with pending tasks (submitted but not complete).
+     */
+    public boolean hasPendingTasks() {
+        for (DagRecord dag : allDags) {
+            if (dag.getState() != DagRecord.DagState.CREATED && !dag.isComplete()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private TaskContext buildTaskContextForNextState(DagRecord dag, TaskRecord candidate, TaskRecord fallbackTask) {
         TaskRecord base = (candidate != null) ? candidate : fallbackTask;
         TaskContext ctx = new TaskContext();
@@ -426,11 +438,18 @@ public class DagRuntimeManager extends SimEntity {
     public void shutdownEntity() {
         // Log all DAGs that were submitted at shutdown
         try {
+            long shutdownTotalDagRunTimeMs = 0;
+            int shutdownDagCount = 0;
             for (DagRecord dag : allDags) {
                 try {
                     if (dag.getState() != DagRecord.DagState.CREATED) {
                         dag.setCompleteTimeMs(CloudSim.clock() * 1000.0);
                         logDagCompletion(dag);
+                        if (dagsWithScheduledTasks.contains(dag.getDagId())) {
+                            long makespan = (long) Math.max(0.0, dag.getCompleteTimeMs() - dag.getSubmitAtSimMs());
+                            shutdownTotalDagRunTimeMs += makespan;
+                            shutdownDagCount++;
+                        }
                     }
                 } catch (Exception e) {
                     System.err.println("Error logging DAG " + dag.getDagId() + ": " + e.getMessage());
@@ -442,10 +461,12 @@ public class DagRuntimeManager extends SimEntity {
             System.out.println("Total DAGs configured: " + allDags.size());
             System.out.println("Total DAGs arrived (DAG_SUBMIT processed): " + dagsArrivedCount);
             System.out.println("Total DAGs with >=1 task scheduled: " + dagsWithScheduledTasks.size());
-            System.out.println("Total DAG runtime (sum of makespans): " + totalDagRunTimeMs + " ms");
-            if (dagsWithScheduledTasks.size() > 0) {
+            long totalDagRuntimeMs = shutdownTotalDagRunTimeMs > 0 ? shutdownTotalDagRunTimeMs : totalDagRunTimeMs;
+            int denom = shutdownDagCount > 0 ? shutdownDagCount : dagsWithScheduledTasks.size();
+            System.out.println("Total DAG runtime (sum of makespans): " + totalDagRuntimeMs + " ms");
+            if (denom > 0) {
                 System.out.println("Average DAG makespan (over scheduled DAGs): "
-                        + (totalDagRunTimeMs / (double) dagsWithScheduledTasks.size()) + " ms");
+                        + (totalDagRuntimeMs / (double) denom) + " ms");
             }
             System.out.println("==========================================");
         } catch (Exception e) {

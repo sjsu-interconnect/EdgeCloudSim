@@ -31,6 +31,9 @@ import edu.boun.edgecloudsim.task_generator.LoadGeneratorModel;
 import edu.boun.edgecloudsim.network.NetworkModel;
 import edu.boun.edgecloudsim.utils.TaskProperty;
 import edu.boun.edgecloudsim.utils.SimLogger;
+import edu.boun.edgecloudsim.dagsim.DagRuntimeManager;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 /**
  * Simulation Manager - Main coordination entity for EdgeCloudSim simulations.
@@ -59,6 +62,7 @@ public class SimManager extends SimEntity {
 	private String simScenario;            // Current simulation scenario name
 	private String orchestratorPolicy;     // Selected orchestration policy
 	private int numOfMobileDevice;         // Number of mobile devices in simulation
+	private volatile boolean simulationStopping = false;
 	
 	// Core simulation models and components
 	private NetworkModel networkModel;              // Network delay and bandwidth model
@@ -179,6 +183,13 @@ public class SimManager extends SimEntity {
 	 */
 	public String getOrchestratorPolicy(){
 		return orchestratorPolicy;
+	}
+
+	/**
+	 * Returns true when the simulation is in shutdown phase.
+	 */
+	public boolean isSimulationStopping() {
+		return simulationStopping;
 	}
 	
 	/**
@@ -366,10 +377,18 @@ public class SimManager extends SimEntity {
 				break;
 			case STOP_SIMULATION:
 				// Terminate simulation and finalize logging
+				DagRuntimeManager drm = DagRuntimeManager.getInstance();
+				if (drm != null && drm.hasPendingTasks()) {
+					// Wait until all DAG queues drain before stopping.
+					schedule(getId(), 1.0, STOP_SIMULATION);
+					break;
+				}
+				simulationStopping = true;
 				SimLogger.printLine("100");
 				CloudSim.terminateSimulation();
 				try {
 					SimLogger.getInstance().simStopped();
+					exportRlRewardsOnShutdown();
 				} catch (IOException e) {
 					e.printStackTrace();
 					System.exit(1);
@@ -380,6 +399,47 @@ public class SimManager extends SimEntity {
 				break;
 			}
 		}
+	}
+
+	/**
+	 * Trigger reward export on the RL server after simulation shutdown.
+	 * Best-effort: failures are logged but do not stop the simulation.
+	 */
+	private void exportRlRewardsOnShutdown() {
+		if (orchestratorPolicy == null || !orchestratorPolicy.equalsIgnoreCase("REMOTE_RL")) {
+			return;
+		}
+		String baseUrl = SimSettings.getInstance().getRlServiceUrl();
+		if (baseUrl == null || baseUrl.trim().isEmpty()) {
+			return;
+		}
+		try {
+			String url = resolveEndpoint(baseUrl, "/export_rewards");
+			HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+			conn.setRequestMethod("POST");
+			conn.setConnectTimeout(2000);
+			conn.setReadTimeout(2000);
+			conn.setDoOutput(true);
+			conn.getOutputStream().write(new byte[0]);
+			conn.getInputStream().close();
+		} catch (Exception e) {
+			SimLogger.printLine("Warning: failed to export RL rewards: " + e.getMessage());
+		}
+	}
+
+	private String resolveEndpoint(String configuredUrl, String endpointPath) {
+		String url = configuredUrl.trim();
+		if (url.endsWith(endpointPath)) {
+			return url;
+		}
+		if (url.endsWith("/act") || url.endsWith("/observe")) {
+			int idx = url.lastIndexOf('/');
+			url = url.substring(0, idx);
+		}
+		if (url.endsWith("/")) {
+			url = url.substring(0, url.length() - 1);
+		}
+		return url + endpointPath;
 	}
 
 	/**

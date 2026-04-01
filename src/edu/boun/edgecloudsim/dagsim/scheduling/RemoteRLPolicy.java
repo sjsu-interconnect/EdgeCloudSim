@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
 import edu.boun.edgecloudsim.dagsim.DagRuntimeManager;
 
@@ -47,6 +48,10 @@ public class RemoteRLPolicy implements SchedulingPolicy {
     @Override
     public PlacementDecision decide(TaskContext task, ClusterState state) {
         try {
+            SimManager sm = SimManager.getInstance();
+            if (sm != null && sm.isSimulationStopping()) {
+                return new EdgeFirstFeasiblePolicy().decide(task, state);
+            }
             DagRuntimeManager drm = DagRuntimeManager.getInstance();
             double budget = SimSettings.getInstance().getRlBudgetCost();
             double costSoFar = (drm != null && task.dagId != null) ? drm.getDagCostSoFar(task.dagId) : 0.0;
