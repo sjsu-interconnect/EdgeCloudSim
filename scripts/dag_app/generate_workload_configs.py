@@ -38,77 +38,95 @@ def main() -> None:
     if not base_props.exists():
         raise SystemExit(f"Base properties not found: {base_props}")
 
+    # Generate edge XML variants first
+    from subprocess import run
+    run(["python3", str(script_dir / "generate_edge_device_variants.py")], check=True)
+
     repo_root = script_dir.parent.parent
     dags_dir = repo_root / "src" / "edu" / "boun" / "edgecloudsim" / "dagsim"
 
     workloads = [
-        # Light: fewer arrivals, long enough sim window to admit most DAGs
+        # 1K DAGs only
         {
-            "id": "W1_LIGHT_1K",
+            "id": "AMPLE_1K",
             "dag_file": dags_dir / "synthetic_dags_1k_container.json",
             "interarrival": "1.0",
-            "simulation_time": "1200",
+            "simulation_time_min": "60",
         },
-        # Baseline: matches prior logs (mean 0.36s)
         {
-            "id": "W2_BASE_1K",
+            "id": "NORMAL_1K",
             "dag_file": dags_dir / "synthetic_dags_1k_container.json",
             "interarrival": "0.36",
-            "simulation_time": "600",
+            "simulation_time_min": "30",
         },
-        # Heavy: bursty arrivals
         {
-            "id": "W3_HEAVY_1K",
+            "id": "PEAK_1K",
             "dag_file": dags_dir / "synthetic_dags_1k_container.json",
             "interarrival": "0.10",
-            "simulation_time": "600",
-        },
-        # Larger DAG pool, baseline arrivals
-        {
-            "id": "W4_BASE_10K",
-            "dag_file": dags_dir / "synthetic_dags_10k_container.json",
-            "interarrival": "0.36",
-            "simulation_time": "4000",
-        },
-        # Larger DAG pool, heavier arrivals
-        {
-            "id": "W5_HEAVY_10K",
-            "dag_file": dags_dir / "synthetic_dags_10k_container.json",
-            "interarrival": "0.10",
-            "simulation_time": "2000",
+            "simulation_time_min": "30",
         },
     ]
 
     policies = [
         "REMOTE_RL",
         "GLOBAL_BEST_FIT",
+        "EDGE_FIRST_GLOBAL",
+    ]
+
+    capacities = [
+        # capacity_id, edge_xml, cloud_scale
+        ("BALANCED", "edge_ai_devices_scaled.xml", 1.0),
+        ("EDGE_EXCESS", "edge_ai_devices_edge_excess.xml", 1.0),
+        ("CLOUD_EXCESS", "edge_ai_devices_scaled.xml", 2.0),
+    ]
+
+    vm_types = [
+        ("HOMO", None),  # use edge_xml as-is
+        ("HETERO", {
+            "edge_ai_devices_scaled.xml": "edge_ai_devices_scaled_hetero.xml",
+            "edge_ai_devices_edge_excess.xml": "edge_ai_devices_edge_excess_hetero.xml",
+        }),
     ]
 
     base_lines = load_lines(base_props)
-    for w in workloads:
-        for policy in policies:
-            overrides = {
-                "orchestrator_policies": policy,
-                "dag_interarrival_rate": w["interarrival"],
-                "dag_input_path": str(Path(w["dag_file"]).resolve()),
-                "simulation_time": w["simulation_time"],
-                # Keep runs reproducible and comparable per workload.
-                "rng_seed": "42",
-            }
-            out_lines = apply_overrides(base_lines, overrides)
-            out_name = f"DAG_APP_{w['id']}_{policy}.properties"
-            out_path = config_dir / out_name
-            out_path.write_text("".join(out_lines))
-            print(f"Wrote {out_path}")
+    matrix_rows = ["scenario,edge_devices_file,applications_file,policy,workload,capacity,vm_type"]
 
-    # Emit a small CSV summary for paper/table use.
-    summary_path = script_dir / "workload_matrix.csv"
-    rows = ["workload_id,dag_file,interarrival_s,simulation_time_s"]
     for w in workloads:
-        rows.append(
-            f"{w['id']},{Path(w['dag_file']).name},{w['interarrival']},{w['simulation_time']}"
-        )
-    summary_path.write_text("\n".join(rows) + "\n")
+        for cap_id, edge_xml, cloud_scale in capacities:
+            for vm_type_id, hetero_map in vm_types:
+                edge_xml_resolved = edge_xml
+                if hetero_map and edge_xml in hetero_map:
+                    edge_xml_resolved = hetero_map[edge_xml]
+                for policy in policies:
+                    overrides = {
+                        "orchestrator_policies": policy,
+                        "dag_interarrival_rate": w["interarrival"],
+                        "dag_input_path": str(Path(w["dag_file"]).resolve()),
+                        "simulation_time": w["simulation_time_min"],
+                        # Keep runs reproducible and comparable per workload.
+                        "rng_seed": "42",
+                    }
+
+                    if cloud_scale != 1.0:
+                        # Scale cloud capacity for CLOUD_EXCESS
+                        overrides.update({
+                            "number_of_vm_on_cloud_host": str(int(round(4 * cloud_scale))),
+                            "core_for_cloud_vm": str(int(round(4 * cloud_scale))),
+                            "mips_for_cloud_vm": str(int(round(10000 * cloud_scale))),
+                            "ram_for_cloud_vm": str(int(round(32000 * cloud_scale))),
+                        })
+
+                    out_lines = apply_overrides(base_lines, overrides)
+                    scenario_name = f"DAG_APP_{w['id']}_{cap_id}_{vm_type_id}_{policy}"
+                    out_path = config_dir / f"{scenario_name}.properties"
+                    out_path.write_text("".join(out_lines))
+                    print(f"Wrote {out_path}")
+                    matrix_rows.append(
+                        f"{scenario_name},{edge_xml_resolved},applications_dag_stable_diffusion.xml,{policy},{w['id']},{cap_id},{vm_type_id}"
+                    )
+
+    summary_path = script_dir / "workload_matrix.csv"
+    summary_path.write_text("\n".join(matrix_rows) + "\n")
     print(f"Wrote {summary_path}")
 
 

@@ -21,13 +21,16 @@ if ! [[ "${NUM_RUNS}" =~ ^[0-9]+$ ]] || [[ "${NUM_RUNS}" -lt 1 ]]; then
 fi
 
 # Generate configs if missing
-if ! ls "${CONFIG_DIR}"/DAG_APP_W*_REMOTE_RL.properties >/dev/null 2>&1; then
+if [ ! -f "${SCRIPT_DIR}/workload_matrix.csv" ]; then
   python3 "${SCRIPT_DIR}/generate_workload_configs.py"
 fi
 
-for props in "${CONFIG_DIR}"/DAG_APP_W*_REMOTE_RL.properties "${CONFIG_DIR}"/DAG_APP_W*_GLOBAL_BEST_FIT.properties; do
-  [ -f "${props}" ] || continue
-  scenario_name="$(basename "${props}" .properties)"
-  echo "=== Running ${scenario_name} ==="
-  "${SCRIPT_DIR}/run_config_batch.sh" "${scenario_name}" "${EDGE_DEVICES_FILE}" "${APPLICATIONS_FILE}" "${NUM_RUNS}"
-done
+while IFS=, read -r scenario edge_xml app_xml policy workload capacity vm_type; do
+  if [ "${scenario}" = "scenario" ]; then
+    continue
+  fi
+  edge_file="${edge_xml:-${EDGE_DEVICES_FILE}}"
+  app_file="${app_xml:-${APPLICATIONS_FILE}}"
+  echo "=== Running ${scenario} (${policy}, ${workload}, ${capacity}, ${vm_type}) ==="
+  "${SCRIPT_DIR}/run_config_batch.sh" "${scenario}" "${edge_file}" "${app_file}" "${NUM_RUNS}"
+done < "${SCRIPT_DIR}/workload_matrix.csv"
