@@ -31,12 +31,33 @@ start_rl_server() {
   fi
 
   local uvicorn_bin="${DAG_SCHEDULER_DIR}/.venv-rl/bin/uvicorn"
-  if [[ ! -x "${uvicorn_bin}" ]]; then
-    uvicorn_bin="$(command -v uvicorn || true)"
+  local conda_env="${RL_CONDA_ENV:-}"
+  local conda_sh="${CONDA_SH:-}"
+  local use_conda=0
+
+  if [[ -n "${conda_env}" ]]; then
+    use_conda=1
+    if [[ -z "${conda_sh}" ]]; then
+      if [[ -n "${CONDA_EXE:-}" ]]; then
+        conda_sh="$(dirname "${CONDA_EXE}")/../etc/profile.d/conda.sh"
+      else
+        conda_sh="$(conda info --base 2>/dev/null)/etc/profile.d/conda.sh"
+      fi
+    fi
+    if [[ -z "${conda_sh}" || ! -f "${conda_sh}" ]]; then
+      echo "CONDA_SH not found. Set CONDA_SH to your conda.sh path or ensure 'conda info --base' works."
+      exit 1
+    fi
   fi
-  if [[ -z "${uvicorn_bin}" ]]; then
-    echo "uvicorn not found. Ensure DAGScheduler venv is set up at ${DAG_SCHEDULER_DIR}/.venv-rl"
-    exit 1
+
+  if [[ "${use_conda}" -eq 0 ]]; then
+    if [[ ! -x "${uvicorn_bin}" ]]; then
+      uvicorn_bin="$(command -v uvicorn || true)"
+    fi
+    if [[ -z "${uvicorn_bin}" ]]; then
+      echo "uvicorn not found. Set RL_CONDA_ENV to use conda or install venv at ${DAG_SCHEDULER_DIR}/.venv-rl"
+      exit 1
+    fi
   fi
 
   # Ensure checkpoint/reward paths are unique per run
@@ -45,10 +66,17 @@ start_rl_server() {
   export RL_REWARD_PLOT_PATH="${CONFIG_ROOT}/reward_curve_${RUN_TAG}.png"
   export RL_REWARD_CSV_PATH="${CONFIG_ROOT}/rewards_${RUN_TAG}.csv"
 
-  (
-    cd "${DAG_SCHEDULER_DIR}"
-    "${uvicorn_bin}" rl_service.app.main:app --host 127.0.0.1 --port 8009
-  ) > "${CONFIG_ROOT}/rl_server_${RUN_TAG}.log" 2>&1 &
+  if [[ "${use_conda}" -eq 1 ]]; then
+    (
+      cd "${DAG_SCHEDULER_DIR}"
+      bash -lc "source \"${conda_sh}\" && conda activate \"${conda_env}\" && uvicorn rl_service.app.main:app --host 127.0.0.1 --port 8009"
+    ) > "${CONFIG_ROOT}/rl_server_${RUN_TAG}.log" 2>&1 &
+  else
+    (
+      cd "${DAG_SCHEDULER_DIR}"
+      "${uvicorn_bin}" rl_service.app.main:app --host 127.0.0.1 --port 8009
+    ) > "${CONFIG_ROOT}/rl_server_${RUN_TAG}.log" 2>&1 &
+  fi
   RL_SERVER_PID=$!
 
   # Simple readiness loop (max 20s)
