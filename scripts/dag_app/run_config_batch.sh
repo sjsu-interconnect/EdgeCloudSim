@@ -5,7 +5,7 @@ set -euo pipefail
 # parse each log asynchronously, then generate aggregate summary.
 #
 # Usage:
-# ./run_config_batch.sh <config_name> <edge_devices_file> <applications_file> [num_runs]
+# ./run_config_batch.sh <config_name> <edge_devices_file> <applications_file> [num_runs] [policy] [dag_scheduler_dir]
 # Example:
 # ./run_config_batch.sh DAG_APP edge_ai_devices.xml applications_dag.xml 10
 
@@ -16,11 +16,62 @@ CONFIG_NAME="${1:-DAG_APP}"
 EDGE_DEVICES_FILE="${2:-edge_ai_devices.xml}"
 APPLICATIONS_FILE="${3:-applications_dag.xml}"
 NUM_RUNS="${4:-10}"
+POLICY="${5:-}"
+DAG_SCHEDULER_DIR="${6:-}"
 
 if ! [[ "${NUM_RUNS}" =~ ^[0-9]+$ ]] || [[ "${NUM_RUNS}" -lt 1 ]]; then
   echo "NUM_RUNS must be a positive integer"
   exit 1
 fi
+
+start_rl_server() {
+  if [[ -z "${DAG_SCHEDULER_DIR}" ]]; then
+    echo "DAG_SCHEDULER_DIR is required to start RL server for REMOTE_RL policy"
+    exit 1
+  fi
+
+  local uvicorn_bin="${DAG_SCHEDULER_DIR}/.venv-rl/bin/uvicorn"
+  if [[ ! -x "${uvicorn_bin}" ]]; then
+    uvicorn_bin="$(command -v uvicorn || true)"
+  fi
+  if [[ -z "${uvicorn_bin}" ]]; then
+    echo "uvicorn not found. Ensure DAGScheduler venv is set up at ${DAG_SCHEDULER_DIR}/.venv-rl"
+    exit 1
+  fi
+
+  # Ensure checkpoint/reward paths are unique per run
+  export RL_CHECKPOINT_DIR="${CONFIG_ROOT}/checkpoints"
+  export RL_CHECKPOINT_FILENAME="ppo_${RUN_TAG}.pt"
+  export RL_REWARD_PLOT_PATH="${CONFIG_ROOT}/reward_curve_${RUN_TAG}.png"
+  export RL_REWARD_CSV_PATH="${CONFIG_ROOT}/rewards_${RUN_TAG}.csv"
+
+  (
+    cd "${DAG_SCHEDULER_DIR}"
+    "${uvicorn_bin}" rl_service.app.main:app --host 127.0.0.1 --port 8009
+  ) > "${CONFIG_ROOT}/rl_server_${RUN_TAG}.log" 2>&1 &
+  RL_SERVER_PID=$!
+
+  # Simple readiness loop (max 20s)
+  for _ in $(seq 1 40); do
+    if curl -s "http://127.0.0.1:8009/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.5
+  done
+
+  echo "RL server failed to start (check ${CONFIG_ROOT}/rl_server_${RUN_TAG}.log)"
+  return 1
+}
+
+stop_rl_server() {
+  if [[ -n "${RL_SERVER_PID:-}" ]]; then
+    # Export reward artifacts before shutdown
+    curl -s -X POST "http://127.0.0.1:8009/export_rewards" >/dev/null 2>&1 || true
+    kill "${RL_SERVER_PID}" >/dev/null 2>&1 || true
+    wait "${RL_SERVER_PID}" >/dev/null 2>&1 || true
+    unset RL_SERVER_PID
+  fi
+}
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
 BATCH_ROOT="${REPO_ROOT}/scripts/output/batch_${CONFIG_NAME}_${STAMP}"
@@ -40,7 +91,13 @@ for i in $(seq 1 "${NUM_RUNS}"); do
   RUN_TAG="ite$(printf '%02d' "${i}")"
 
   echo "[${RUN_TAG}] starting simulation"
+  if [[ "${POLICY}" == "REMOTE_RL" ]]; then
+    start_rl_server
+  fi
   "${SCRIPT_DIR}/runner.sh" "${BATCH_ROOT}" "${CONFIG_NAME}" "${EDGE_DEVICES_FILE}" "${APPLICATIONS_FILE}" "${i}"
+  if [[ "${POLICY}" == "REMOTE_RL" ]]; then
+    stop_rl_server
+  fi
 
   LOG_PATH="${CONFIG_ROOT}/ite${i}.log"
   METRIC_JSON="${CONFIG_ROOT}/metrics_ite${i}.json"
