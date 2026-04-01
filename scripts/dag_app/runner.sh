@@ -29,7 +29,7 @@ fi
 
 mkdir -p $scenario_out_folder
 # Allow overriding JVM heap via JAVA_OPTS, default to a safer heap to avoid OOM.
-JAVA_OPTS="${JAVA_OPTS:--Xms1g -Xmx4g}"
+JAVA_OPTS="${JAVA_OPTS:--Xms2g -Xmx8g}"
 java ${JAVA_OPTS} -classpath '../../bin:../../lib/cloudsim-7.0.0-alpha.jar:../../lib/commons-math3-3.6.1.jar:../../lib/colt.jar:../../lib/gson-2.10.1.jar' \
     edu.boun.edgecloudsim.applications.sample_app1.MainApp \
     $scenario_conf_file $scenario_edge_devices_file $scenario_applications_file $scenario_out_folder $iteration_number \

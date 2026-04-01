@@ -377,11 +377,13 @@ public class SimManager extends SimEntity {
 				break;
 			case STOP_SIMULATION:
 				// Terminate simulation and finalize logging
-				DagRuntimeManager drm = DagRuntimeManager.getInstance();
-				if (drm != null && drm.hasPendingTasks()) {
-					// Wait until all DAG queues drain before stopping.
-					schedule(getId(), 1.0, STOP_SIMULATION);
-					break;
+				if (SimSettings.getInstance().stopWhenQueuesEmpty()) {
+					DagRuntimeManager drm = DagRuntimeManager.getInstance();
+					if (drm != null && drm.hasPendingTasks()) {
+						// Wait until all DAG queues drain before stopping.
+						schedule(getId(), 1.0, STOP_SIMULATION);
+						break;
+					}
 				}
 				simulationStopping = true;
 				SimLogger.printLine("100");
