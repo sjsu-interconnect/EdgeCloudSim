@@ -38,7 +38,8 @@ def make_hetero(root: ET.Element) -> None:
             elem = base_vm.find(tag)
             base[tag] = int(elem.text) if elem is not None and elem.text else 0
 
-        # Build heterogeneous mix: 2 small, 4 medium, 2 large (total 8 VMs).
+        # Build heterogeneous mix that fits host capacity:
+        # sum(factors) == 8.0, so totals match the 8x base VM footprint.
         sizes = [
             ("small", 0.5),
             ("small", 0.5),
@@ -46,8 +47,8 @@ def make_hetero(root: ET.Element) -> None:
             ("medium", 1.0),
             ("medium", 1.0),
             ("medium", 1.0),
-            ("large", 2.0),
-            ("large", 2.0),
+            ("large", 1.5),
+            ("large", 1.5),
         ]
 
         vmm_attr = base_vm.get("vmm", "Xen")
