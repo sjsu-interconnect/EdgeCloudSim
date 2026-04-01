@@ -76,6 +76,14 @@ coverage.xml
 /scripts/output/
 misc/
 
+# ----------------------------
+# Generated DAG workload configs / device variants
+# ----------------------------
+scripts/dag_app/config/DAG_APP_*_1K_*_*.properties
+scripts/dag_app/config/edge_ai_devices_*_hetero.xml
+scripts/dag_app/config/edge_ai_devices_edge_excess.xml
+scripts/dag_app/config/workload_matrix.csv
+
 
 synthetic_dags_100k_container.json
 synthetic_dags_10k_container.json
