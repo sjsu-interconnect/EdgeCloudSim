@@ -69,6 +69,7 @@ public class SimSettings {
 
 	// Simulation timing parameters (converted from minutes in properties file)
 	private double SIMULATION_TIME;
+	private boolean STOP_WHEN_QUEUES_EMPTY = true;
 	private double WARM_UP_PERIOD;
 	private double INTERVAL_TO_GET_VM_LOAD_LOG;
 	private double INTERVAL_TO_GET_LOCATION_LOG;
@@ -236,6 +237,7 @@ public class SimSettings {
 					* Double.parseDouble(prop.getProperty("ap_delay_check_interval", "0")); // seconds
 			FILE_LOG_ENABLED = Boolean.parseBoolean(prop.getProperty("file_log_enabled"));
 			DEEP_FILE_LOG_ENABLED = Boolean.parseBoolean(prop.getProperty("deep_file_log_enabled"));
+			STOP_WHEN_QUEUES_EMPTY = Boolean.parseBoolean(prop.getProperty("stop_when_queues_empty", "true"));
 
 			MIN_NUM_OF_MOBILE_DEVICES = Integer.parseInt(prop.getProperty("min_number_of_mobile_devices"));
 			MAX_NUM_OF_MOBILE_DEVICES = Integer.parseInt(prop.getProperty("max_number_of_mobile_devices"));
@@ -361,6 +363,13 @@ public class SimSettings {
 	 */
 	public double getSimulationTime() {
 		return SIMULATION_TIME;
+	}
+
+	/**
+	 * Whether to keep the simulation running until DAG queues drain.
+	 */
+	public boolean stopWhenQueuesEmpty() {
+		return STOP_WHEN_QUEUES_EMPTY;
 	}
 
 	/**
