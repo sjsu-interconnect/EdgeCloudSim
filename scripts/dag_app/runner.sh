@@ -28,7 +28,12 @@ if [ ! -f "$scenario_conf_file" ]; then
 fi
 
 mkdir -p $scenario_out_folder
-java -classpath '../../bin:../../lib/cloudsim-7.0.0-alpha.jar:../../lib/commons-math3-3.6.1.jar:../../lib/colt.jar:../../lib/gson-2.10.1.jar' edu.boun.edgecloudsim.applications.sample_app1.MainApp $scenario_conf_file $scenario_edge_devices_file $scenario_applications_file $scenario_out_folder $iteration_number > ${scenario_out_folder}.log
+# Allow overriding JVM heap via JAVA_OPTS, default to a safer heap to avoid OOM.
+JAVA_OPTS="${JAVA_OPTS:--Xms1g -Xmx4g}"
+java ${JAVA_OPTS} -classpath '../../bin:../../lib/cloudsim-7.0.0-alpha.jar:../../lib/commons-math3-3.6.1.jar:../../lib/colt.jar:../../lib/gson-2.10.1.jar' \
+    edu.boun.edgecloudsim.applications.sample_app1.MainApp \
+    $scenario_conf_file $scenario_edge_devices_file $scenario_applications_file $scenario_out_folder $iteration_number \
+    > ${scenario_out_folder}.log 2>&1
 
 if [ $? -eq 0 ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') - ite${iteration_number} OK" >> ${simulation_out_folder}/${scenario_name}/progress.log
