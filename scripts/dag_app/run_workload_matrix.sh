@@ -38,5 +38,5 @@ while IFS=, read -r scenario edge_xml app_xml policy workload capacity vm_type; 
   edge_file="${edge_xml:-${EDGE_DEVICES_FILE}}"
   app_file="${app_xml:-${APPLICATIONS_FILE}}"
   echo "=== Running ${scenario} (${policy}, ${workload}, ${capacity}, ${vm_type}) ==="
-  "${SCRIPT_DIR}/run_config_batch.sh" "${scenario}" "${edge_file}" "${app_file}" "${NUM_RUNS}" "${policy}" "${DAG_SCHEDULER_DIR}"
+  "${SCRIPT_DIR}/run_config_batch_with_rl.sh" "${scenario}" "${edge_file}" "${app_file}" "${NUM_RUNS}" "${policy}" "${DAG_SCHEDULER_DIR}"
 done < "${SCRIPT_DIR}/workload_matrix.csv"
