@@ -3,7 +3,7 @@
 	<!-- 8 edge datacenters for DAG_APP sample -->
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>4.0</costPerSec>
+		<costPerSec>0.06</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -39,7 +39,7 @@
 	<!-- Repeat for wlan_id 1..7 -->
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>4.0</costPerSec>
+		<costPerSec>0.06</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -74,7 +74,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>4.0</costPerSec>
+		<costPerSec>0.06</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -109,7 +109,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>4.0</costPerSec>
+		<costPerSec>0.06</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -144,7 +144,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>4.0</costPerSec>
+		<costPerSec>0.06</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -179,7 +179,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>4.0</costPerSec>
+		<costPerSec>0.06</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -214,7 +214,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>4.0</costPerSec>
+		<costPerSec>0.06</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -249,7 +249,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>4.0</costPerSec>
+		<costPerSec>0.06</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
