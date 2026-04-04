@@ -65,20 +65,15 @@ public class CloudVmAllocationPolicy_Custom extends VmAllocationPolicy {
 
 		// Check if VM is not already allocated and is a CloudVM instance
 		if (!getVmTable().containsKey(vm.getUid()) && vm instanceof CloudVM) {
-			// Calculate target host index based on VM ID range
-			int hostIndex = (vm.getId() - SimSettings.getInstance().getNumOfEdgeVMs()) / SimSettings.getInstance().getNumOfCloudVMsPerHost();
-			
-			// Only allocate if this is the designated cloud datacenter
-			if(DataCenterIndex == SimSettings.CLOUD_DATACENTER_ID){
-				Host host = getHostList().get(hostIndex);
-				result = host.vmCreate(vm);
-	
-				if (result) { // VM successfully created on the host
-					getVmTable().put(vm.getUid(), host);
-					createdVmNum++;
-					Log.formatLine("%.2f: Cloud VM #" + vm.getId() + " has been allocated to the host #" + host.getId(),CloudSim.clock());
-					result = true;
-				}
+			int hostIndex = createdVmNum % getHostList().size();
+			Host host = getHostList().get(hostIndex);
+			result = host.vmCreate(vm);
+
+			if (result) { // VM successfully created on the host
+				getVmTable().put(vm.getUid(), host);
+				createdVmNum++;
+				Log.formatLine("%.2f: Cloud VM #" + vm.getId() + " has been allocated to the host #" + host.getId(),CloudSim.clock());
+				result = true;
 			}
 		}
 		

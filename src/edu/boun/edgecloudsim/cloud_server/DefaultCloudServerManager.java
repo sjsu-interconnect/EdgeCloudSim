@@ -26,6 +26,10 @@ import org.cloudbus.cloudsim.core.CloudSim;
 import org.cloudbus.cloudsim.provisioners.BwProvisionerSimple;
 import org.cloudbus.cloudsim.provisioners.PeProvisionerSimple;
 import org.cloudbus.cloudsim.provisioners.RamProvisionerSimple;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
@@ -37,6 +41,8 @@ import edu.boun.edgecloudsim.core.SimSettings;
  * configurations.
  */
 public class DefaultCloudServerManager extends CloudServerManager {
+	private final List<Element> cloudDatacenterElements = new ArrayList<>();
+	private int cloudHostIdCounter = 0;
 
 	/**
 	 * Constructor for default cloud server manager.
@@ -72,14 +78,50 @@ public class DefaultCloudServerManager extends CloudServerManager {
 	 * @throws Exception if datacenter creation fails
 	 */
 	public void startDatacenters() throws Exception {
-		localDatacenter = createDatacenter(SimSettings.CLOUD_DATACENTER_ID);
+		cloudDatacenterElements.clear();
+		localDatacenters.clear();
+		cloudHostIdCounter = SimSettings.getInstance().getNumOfEdgeHosts();
+
+		Document doc = SimSettings.getInstance().getEdgeDevicesDocument();
+		if (doc != null) {
+			NodeList datacenterList = doc.getElementsByTagName("datacenter");
+			for (int i = 0; i < datacenterList.getLength(); i++) {
+				Node datacenterNode = datacenterList.item(i);
+				Element datacenterElement = (Element) datacenterNode;
+				if (isCloudDatacenterElement(datacenterElement)) {
+					cloudDatacenterElements.add(datacenterElement);
+				}
+			}
+		}
+
+		if (cloudDatacenterElements.isEmpty()) {
+			localDatacenter = createDatacenterFromSettings(SimSettings.CLOUD_DATACENTER_ID);
+			localDatacenters.add(localDatacenter);
+			SimSettings.getInstance().registerCloudDatacenterId(localDatacenter.getId());
+			return;
+		}
+
+		for (int i = 0; i < cloudDatacenterElements.size(); i++) {
+			Datacenter dc = createDatacenterFromElement(i, cloudDatacenterElements.get(i));
+			localDatacenters.add(dc);
+			SimSettings.getInstance().registerCloudDatacenterId(dc.getId());
+		}
+		localDatacenter = localDatacenters.get(0);
 	}
 
 	/**
 	 * Terminates all cloud datacenters and releases resources.
 	 */
 	public void terminateDatacenters() {
-		localDatacenter.shutdownEntity();
+		if (localDatacenters != null && !localDatacenters.isEmpty()) {
+			for (Datacenter dc : localDatacenters) {
+				dc.shutdownEntity();
+			}
+			return;
+		}
+		if (localDatacenter != null) {
+			localDatacenter.shutdownEntity();
+		}
 	}
 
 	/**
@@ -91,8 +133,36 @@ public class DefaultCloudServerManager extends CloudServerManager {
 	public void createVmList(int brokerId) {
 		// VMs should have unique IDs, so create Cloud VMs after Edge VMs
 		int vmCounter = SimSettings.getInstance().getNumOfEdgeVMs();
+		vmList.clear();
 
-		// Create VMs for each cloud host
+		if (!cloudDatacenterElements.isEmpty()) {
+			for (int dcIdx = 0; dcIdx < cloudDatacenterElements.size(); dcIdx++) {
+				Element datacenterElement = cloudDatacenterElements.get(dcIdx);
+				vmList.add(new ArrayList<CloudVM>());
+				NodeList hostNodeList = datacenterElement.getElementsByTagName("host");
+				for (int h = 0; h < hostNodeList.getLength(); h++) {
+					Element hostElement = (Element) hostNodeList.item(h);
+					NodeList vmNodeList = hostElement.getElementsByTagName("VM");
+					for (int v = 0; v < vmNodeList.getLength(); v++) {
+						Element vmElement = (Element) vmNodeList.item(v);
+						String vmm = vmElement.getAttribute("vmm");
+						int numOfCores = Integer.parseInt(vmElement.getElementsByTagName("core").item(0).getTextContent());
+						double mips = Double.parseDouble(vmElement.getElementsByTagName("mips").item(0).getTextContent());
+						int ram = Integer.parseInt(vmElement.getElementsByTagName("ram").item(0).getTextContent());
+						long storage = Long.parseLong(vmElement.getElementsByTagName("storage").item(0).getTextContent());
+						long bandwidth = 0;
+
+						CloudVM vm = new CloudVM(vmCounter, brokerId, mips, numOfCores, ram, bandwidth, storage, vmm,
+								new CloudletSchedulerTimeShared());
+						vmList.get(dcIdx).add(vm);
+						vmCounter++;
+					}
+				}
+			}
+			return;
+		}
+
+		// Fallback: single cloud datacenter from settings
 		for (int i = 0; i < SimSettings.getInstance().getNumOfCloudHost(); i++) {
 			vmList.add(i, new ArrayList<CloudVM>());
 			for (int j = 0; j < SimSettings.getInstance().getNumOfCloudVMsPerHost(); j++) {
@@ -103,7 +173,6 @@ public class DefaultCloudServerManager extends CloudServerManager {
 				long storage = SimSettings.getInstance().getStorageForCloudVM();
 				long bandwidth = 0;
 
-				// Create cloud VM with configured parameters
 				CloudVM vm = new CloudVM(vmCounter, brokerId, mips, numOfCores, ram, bandwidth, storage, vmm,
 						new CloudletSchedulerTimeShared());
 				vmList.get(i).add(vm);
@@ -122,11 +191,9 @@ public class DefaultCloudServerManager extends CloudServerManager {
 		double totalUtilization = 0;
 		double vmCounter = 0;
 
-		List<? extends Host> list = localDatacenter.getHostList();
-		// Iterate through each host in the datacenter
-		for (int hostIndex = 0; hostIndex < list.size(); hostIndex++) {
-			List<CloudVM> vmArray = SimManager.getInstance().getCloudServerManager().getVmList(hostIndex);
-			// Calculate utilization for each VM on this host
+		List<List<CloudVM>> vmLists = vmList;
+		for (int dcIdx = 0; dcIdx < vmLists.size(); dcIdx++) {
+			List<CloudVM> vmArray = vmLists.get(dcIdx);
 			for (int vmIndex = 0; vmIndex < vmArray.size(); vmIndex++) {
 				totalUtilization += vmArray.get(vmIndex).getCloudletScheduler()
 						.getTotalUtilizationOfCpu(CloudSim.clock());
@@ -145,7 +212,7 @@ public class DefaultCloudServerManager extends CloudServerManager {
 	 * @return Configured Datacenter instance
 	 * @throws Exception if datacenter creation fails
 	 */
-	private Datacenter createDatacenter(int index) throws Exception {
+	private Datacenter createDatacenterFromSettings(int index) throws Exception {
 		String arch = "x86";
 		String os = "Linux";
 		String vmm = "Xen";
@@ -174,6 +241,41 @@ public class DefaultCloudServerManager extends CloudServerManager {
 
 		// Register cloud datacenter costs in SimSettings (configurable; by default cloud
 		// compute is derived as multiplier x edge compute cost).
+		SimSettings.datacenterCosts.put(datacenter.getId(), new Double[] {
+				costPerBw,
+				costPerSec,
+				costPerMem,
+				costPerStorage
+		});
+
+		return datacenter;
+	}
+
+	private Datacenter createDatacenterFromElement(int index, Element datacenterElement) throws Exception {
+		String arch = datacenterElement.getAttribute("arch");
+		String os = datacenterElement.getAttribute("os");
+		String vmm = datacenterElement.getAttribute("vmm");
+		double costPerBw = Double
+				.parseDouble(datacenterElement.getElementsByTagName("costPerBw").item(0).getTextContent());
+		double costPerSec = Double
+				.parseDouble(datacenterElement.getElementsByTagName("costPerSec").item(0).getTextContent());
+		double costPerMem = Double
+				.parseDouble(datacenterElement.getElementsByTagName("costPerMem").item(0).getTextContent());
+		double costPerStorage = Double
+				.parseDouble(datacenterElement.getElementsByTagName("costPerStorage").item(0).getTextContent());
+
+		List<Host> hostList = createHostsFromElement(datacenterElement);
+
+		String name = "CloudDatacenter_" + Integer.toString(index);
+		double time_zone = 3.0;
+		LinkedList<Storage> storageList = new LinkedList<Storage>();
+
+		DatacenterCharacteristics characteristics = new DatacenterCharacteristics(
+				arch, os, vmm, hostList, time_zone, costPerSec, costPerMem, costPerStorage, costPerBw);
+
+		VmAllocationPolicy vm_policy = getVmAllocationPolicy(hostList, index);
+		Datacenter datacenter = new Datacenter(name, characteristics, vm_policy, storageList, 0);
+
 		SimSettings.datacenterCosts.put(datacenter.getId(), new Double[] {
 				costPerBw,
 				costPerSec,
@@ -214,8 +316,7 @@ public class DefaultCloudServerManager extends CloudServerManager {
 
 			// Step 4: Create host with unique ID and resource provisioners
 			Host host = new Host(
-					// Hosts should have unique IDs, so create Cloud Hosts after Edge Hosts
-					i + SimSettings.getInstance().getNumOfEdgeHosts(),
+					cloudHostIdCounter++,
 					new RamProvisionerSimple(ram),
 					new BwProvisionerSimple(bandwidth), // Bandwidth in kbps
 					storage,
@@ -226,5 +327,43 @@ public class DefaultCloudServerManager extends CloudServerManager {
 		}
 
 		return hostList;
+	}
+
+	private List<Host> createHostsFromElement(Element datacenterElement) {
+		List<Host> hostList = new ArrayList<Host>();
+
+		NodeList hostNodeList = datacenterElement.getElementsByTagName("host");
+		for (int j = 0; j < hostNodeList.getLength(); j++) {
+			Element hostElement = (Element) hostNodeList.item(j);
+			int numOfCores = Integer.parseInt(hostElement.getElementsByTagName("core").item(0).getTextContent());
+			double mips = Double.parseDouble(hostElement.getElementsByTagName("mips").item(0).getTextContent());
+			int ram = Integer.parseInt(hostElement.getElementsByTagName("ram").item(0).getTextContent());
+			long storage = Long.parseLong(hostElement.getElementsByTagName("storage").item(0).getTextContent());
+			long bandwidth = 0;
+
+			List<Pe> peList = new ArrayList<Pe>();
+			for (int i = 0; i < numOfCores; i++) {
+				peList.add(new Pe(i, new PeProvisionerSimple(mips)));
+			}
+
+			Host host = new Host(
+					cloudHostIdCounter++,
+					new RamProvisionerSimple(ram),
+					new BwProvisionerSimple(bandwidth),
+					storage,
+					peList,
+					new VmSchedulerSpaceShared(peList));
+			hostList.add(host);
+		}
+
+		return hostList;
+	}
+
+	private boolean isCloudDatacenterElement(Element datacenterElement) {
+		if (datacenterElement == null) {
+			return false;
+		}
+		String tier = datacenterElement.getAttribute("tier");
+		return tier != null && tier.equalsIgnoreCase("CLOUD");
 	}
 }

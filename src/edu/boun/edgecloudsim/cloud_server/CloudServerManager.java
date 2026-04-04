@@ -29,12 +29,14 @@ import org.cloudbus.cloudsim.VmAllocationPolicy;
  */
 public abstract class CloudServerManager {
 	protected Datacenter localDatacenter;
+	protected List<Datacenter> localDatacenters;
 	protected List<List<CloudVM>> vmList;
 
 	/**
 	 * Constructor initializes the VM list structure for cloud servers.
 	 */
 	public CloudServerManager() {
+		localDatacenters = new ArrayList<Datacenter>();
 		vmList = new ArrayList<List<CloudVM>>();
 	}
 
@@ -46,13 +48,44 @@ public abstract class CloudServerManager {
 	public List<CloudVM> getVmList(int hostId){
 		return vmList.get(hostId);
 	}
+
+	/**
+	 * Returns the number of VM lists managed by the cloud server manager.
+	 * This corresponds to the number of cloud datacenters when multi-cloud is enabled,
+	 * or the number of hosts in the single-cloud fallback.
+	 */
+	public int getVmListCount() {
+		return vmList.size();
+	}
 	
 	/**
 	 * Gets the cloud datacenter managed by this manager.
 	 * @return The cloud Datacenter instance
 	 */
 	public Datacenter getDatacenter(){
-		return localDatacenter;
+		if (localDatacenter != null) {
+			return localDatacenter;
+		}
+		if (localDatacenters != null && !localDatacenters.isEmpty()) {
+			return localDatacenters.get(0);
+		}
+		return null;
+	}
+
+	/**
+	 * Gets the list of cloud datacenters (supports multi-cloud setups).
+	 * @return list of cloud Datacenter instances (may be empty)
+	 */
+	public List<Datacenter> getDatacenterList() {
+		if (localDatacenters != null && !localDatacenters.isEmpty()) {
+			return localDatacenters;
+		}
+		if (localDatacenter != null) {
+			ArrayList<Datacenter> single = new ArrayList<Datacenter>();
+			single.add(localDatacenter);
+			return single;
+		}
+		return new ArrayList<Datacenter>();
 	}
 	
 	/**

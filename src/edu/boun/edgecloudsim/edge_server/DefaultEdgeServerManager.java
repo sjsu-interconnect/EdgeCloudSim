@@ -106,7 +106,10 @@ public class DefaultEdgeServerManager extends EdgeServerManager {
 		for (int i = 0; i < datacenterList.getLength(); i++) {
 			Node datacenterNode = datacenterList.item(i);
 			Element datacenterElement = (Element) datacenterNode;
-			localDatacenters.add(createDatacenter(i, datacenterElement));
+			if (isCloudDatacenterElement(datacenterElement)) {
+				continue;
+			}
+			localDatacenters.add(createDatacenter(localDatacenters.size(), datacenterElement));
 		}
 	}
 
@@ -129,6 +132,9 @@ public class DefaultEdgeServerManager extends EdgeServerManager {
 		for (int i = 0; i < datacenterList.getLength(); i++) {
 			Node datacenterNode = datacenterList.item(i);
 			Element datacenterElement = (Element) datacenterNode;
+			if (isCloudDatacenterElement(datacenterElement)) {
+				continue;
+			}
 			NodeList hostNodeList = datacenterElement.getElementsByTagName("host");
 			for (int j = 0; j < hostNodeList.getLength(); j++) {
 
@@ -162,6 +168,14 @@ public class DefaultEdgeServerManager extends EdgeServerManager {
 				hostCounter++;
 			}
 		}
+	}
+
+	private boolean isCloudDatacenterElement(Element datacenterElement) {
+		if (datacenterElement == null) {
+			return false;
+		}
+		String tier = datacenterElement.getAttribute("tier");
+		return tier != null && tier.equalsIgnoreCase("CLOUD");
 	}
 
 	/**

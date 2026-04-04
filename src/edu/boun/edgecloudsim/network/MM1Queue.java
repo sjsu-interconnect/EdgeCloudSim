@@ -168,7 +168,7 @@ public class MM1Queue extends NetworkModel {
 		Location accessPointLocation = SimManager.getInstance().getMobilityModel().getLocation(sourceDeviceId, CloudSim.clock());
 
 		// Case 1: Mobile device uploading to cloud datacenter (two-hop: WLAN + WAN)
-		if(destDeviceId == SimSettings.CLOUD_DATACENTER_ID){
+		if(SimSettings.getInstance().isCloudDatacenterId(destDeviceId)){
 			// Calculate WLAN delay from mobile device to edge access point
 			double wlanDelay = getWlanUploadDelay(accessPointLocation, CloudSim.clock());
 			// Calculate WAN delay from edge to cloud (accounting for WLAN transmission time)
@@ -225,7 +225,7 @@ public class MM1Queue extends NetworkModel {
 		Location accessPointLocation = SimManager.getInstance().getMobilityModel().getLocation(destDeviceId, CloudSim.clock());
 
 		// Case 1: Cloud server downloading results to mobile device (two-hop: WAN + WLAN)
-		if(sourceDeviceId == SimSettings.CLOUD_DATACENTER_ID){
+		if(SimSettings.getInstance().isCloudDatacenterId(sourceDeviceId)){
 			// Calculate WLAN delay from access point to mobile device
 			double wlanDelay = getWlanDownloadDelay(accessPointLocation, CloudSim.clock());
 			// Calculate WAN delay from cloud to edge (accounting for WLAN transmission time)

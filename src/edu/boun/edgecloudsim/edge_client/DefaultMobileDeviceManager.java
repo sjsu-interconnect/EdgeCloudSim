@@ -97,15 +97,15 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 		// Log task execution completion
 		SimLogger.getInstance().taskExecuted(task.getCloudletId());
 
-		if (task.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID) {
+		if (SimSettings.getInstance().isCloudDatacenterId(task.getAssociatedDatacenterId())) {
 			// Task completed on cloud - calculate WAN download delay for result delivery
-			double WanDelay = networkModel.getDownloadDelay(SimSettings.CLOUD_DATACENTER_ID, task.getMobileDeviceId(),
+			double WanDelay = networkModel.getDownloadDelay(task.getAssociatedDatacenterId(), task.getMobileDeviceId(),
 					task);
 			if (WanDelay > 0) {
 				Location currentLocation = SimManager.getInstance().getMobilityModel()
 						.getLocation(task.getMobileDeviceId(), CloudSim.clock() + WanDelay);
 				if (task.getSubmittedLocation().getServingWlanId() == currentLocation.getServingWlanId()) {
-					networkModel.downloadStarted(task.getSubmittedLocation(), SimSettings.CLOUD_DATACENTER_ID);
+					networkModel.downloadStarted(task.getSubmittedLocation(), task.getAssociatedDatacenterId());
 					SimLogger.getInstance().setDownloadDelay(task.getCloudletId(), WanDelay,
 							NETWORK_DELAY_TYPES.WAN_DELAY);
 					schedule(getId(), WanDelay, RESPONSE_RECEIVED_BY_MOBILE_DEVICE, task);
@@ -160,10 +160,14 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 				Task task = (Task) ev.getData();
 
 				// Mark upload as completed to cloud datacenter
-				networkModel.uploadFinished(task.getSubmittedLocation(), SimSettings.CLOUD_DATACENTER_ID);
+				int cloudDcId = task.getAssociatedDatacenterId();
+				if (!SimSettings.getInstance().isCloudDatacenterId(cloudDcId)) {
+					cloudDcId = SimSettings.CLOUD_DATACENTER_ID;
+				}
+				networkModel.uploadFinished(task.getSubmittedLocation(), cloudDcId);
 
 				// Submit task to appropriate cloud VM
-				submitTaskToVm(task, 0, SimSettings.CLOUD_DATACENTER_ID);
+				submitTaskToVm(task, 0, cloudDcId);
 
 				break;
 			}
@@ -182,8 +186,8 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 				Task task = (Task) ev.getData();
 
 				// Mark download as finished based on datacenter type
-				if (task.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID)
-					networkModel.downloadFinished(task.getSubmittedLocation(), SimSettings.CLOUD_DATACENTER_ID);
+				if (SimSettings.getInstance().isCloudDatacenterId(task.getAssociatedDatacenterId()))
+					networkModel.downloadFinished(task.getSubmittedLocation(), task.getAssociatedDatacenterId());
 				else if (task.getAssociatedDatacenterId() != SimSettings.MOBILE_DATACENTER_ID)
 					networkModel.downloadFinished(task.getSubmittedLocation(), SimSettings.GENERIC_EDGE_DEVICE_ID);
 
@@ -192,8 +196,8 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 
 				// Map associated DC ID to actual entity ID if it's a symbolic placeholder
 				int datacenterId = task.getAssociatedDatacenterId();
-				if (datacenterId == SimSettings.CLOUD_DATACENTER_ID) {
-					datacenterId = SimManager.getInstance().getCloudServerManager().getDatacenter().getId();
+				if (SimSettings.getInstance().isCloudDatacenterId(datacenterId)) {
+					datacenterId = task.getAssociatedDatacenterId();
 				} else if (datacenterId == SimSettings.GENERIC_EDGE_DEVICE_ID) {
 					// For generic edge, we pick the cost from the first edge datacenter as a proxy
 					datacenterId = SimManager.getInstance().getEdgeServerManager().getDatacenterList().get(0).getId();
@@ -203,7 +207,7 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 				Double[] costs = SimSettings.datacenterCosts.get(datacenterId);
 
 				// Fallback to settings-driven values if datacenter is still not registered
-				boolean isCloudTask = task.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID;
+				boolean isCloudTask = SimSettings.getInstance().isCloudDatacenterId(task.getAssociatedDatacenterId());
 				double costPerBw = (costs != null)
 						? costs[0]
 						: (isCloudTask ? SimSettings.getInstance().getCloudCostPerBw()
@@ -224,7 +228,7 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 
 				// Optional: Add Memory and Storage costs
 				// Memory cost based on the task type's standard RAM allocation
-				double vmRam = (task.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID)
+				double vmRam = (SimSettings.getInstance().isCloudDatacenterId(task.getAssociatedDatacenterId()))
 						? SimSettings.getInstance().getRamForCloudVM()
 						: SimSettings.getInstance().getRamForMobileVM(); // Default for edge/mobile
 
@@ -306,7 +310,7 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 		int nextHopId = SimManager.getInstance().getEdgeOrchestrator().getDeviceToOffload(task);
 
 		// Handle task submission based on orchestrator decision
-		if (nextHopId == SimSettings.CLOUD_DATACENTER_ID) {
+		if (SimSettings.getInstance().isCloudDatacenterId(nextHopId)) {
 			// Task assigned to cloud - calculate WAN upload delay
 			double WanDelay = networkModel.getUploadDelay(task.getMobileDeviceId(), nextHopId, task);
 
@@ -315,6 +319,7 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 				networkModel.uploadStarted(currentLocation, nextHopId);
 				SimLogger.getInstance().taskStarted(task.getCloudletId(), CloudSim.clock());
 				SimLogger.getInstance().setUploadDelay(task.getCloudletId(), WanDelay, NETWORK_DELAY_TYPES.WAN_DELAY);
+				task.setAssociatedDatacenterId(nextHopId);
 				schedule(getId(), WanDelay, REQUEST_RECEIVED_BY_CLOUD, task);
 			} else {
 				// WAN bandwidth not available - reject task
@@ -363,15 +368,15 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 
 		// Determine VM type for logging purposes
 		int vmType = 0;
-		if (datacenterId == SimSettings.CLOUD_DATACENTER_ID)
+		if (SimSettings.getInstance().isCloudDatacenterId(datacenterId))
 			vmType = SimSettings.VM_TYPES.CLOUD_VM.ordinal();
 		else
 			vmType = SimSettings.VM_TYPES.EDGE_VM.ordinal();
 
 		if (selectedVM != null) {
 			// Associate task with the selected datacenter
-			if (datacenterId == SimSettings.CLOUD_DATACENTER_ID)
-				task.setAssociatedDatacenterId(SimSettings.CLOUD_DATACENTER_ID);
+			if (SimSettings.getInstance().isCloudDatacenterId(datacenterId))
+				task.setAssociatedDatacenterId(datacenterId);
 			else
 				task.setAssociatedDatacenterId(selectedVM.getHost().getDatacenter().getId());
 

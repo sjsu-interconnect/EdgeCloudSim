@@ -46,7 +46,7 @@ public class CpuUtilizationModel_Custom implements UtilizationModel {
 	@Override
 	public double getUtilization(double time) {
 		int index = 9;  // Default to edge VM utilization index
-		if(task.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID)
+		if(SimSettings.getInstance().isCloudDatacenterId(task.getAssociatedDatacenterId()))
 			index = 10;  // Cloud VM utilization index
 		else if(task.getAssociatedDatacenterId() == SimSettings.MOBILE_DATACENTER_ID)
 			index = 11;  // Mobile VM utilization index
