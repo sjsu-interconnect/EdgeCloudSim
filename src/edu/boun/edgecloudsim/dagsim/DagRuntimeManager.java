@@ -440,16 +440,21 @@ public class DagRuntimeManager extends SimEntity {
         try {
             long shutdownTotalDagRunTimeMs = 0;
             int shutdownDagCount = 0;
+            int shutdownIncompleteDagCount = 0;
             for (DagRecord dag : allDags) {
                 try {
-                    if (dag.getState() != DagRecord.DagState.CREATED) {
-                        dag.setCompleteTimeMs(CloudSim.clock() * 1000.0);
+                    if (dag.getState() == DagRecord.DagState.COMPLETE || dag.isComplete()) {
+                        if (dag.getCompleteTimeMs() <= 0) {
+                            dag.setCompleteTimeMs(CloudSim.clock() * 1000.0);
+                        }
                         logDagCompletion(dag);
                         if (dagsWithScheduledTasks.contains(dag.getDagId())) {
                             long makespan = (long) Math.max(0.0, dag.getCompleteTimeMs() - dag.getSubmitAtSimMs());
                             shutdownTotalDagRunTimeMs += makespan;
                             shutdownDagCount++;
                         }
+                    } else if (dag.getState() != DagRecord.DagState.CREATED) {
+                        shutdownIncompleteDagCount++;
                     }
                 } catch (Exception e) {
                     System.err.println("Error logging DAG " + dag.getDagId() + ": " + e.getMessage());
@@ -461,11 +466,14 @@ public class DagRuntimeManager extends SimEntity {
             System.out.println("Total DAGs configured: " + allDags.size());
             System.out.println("Total DAGs arrived (DAG_SUBMIT processed): " + dagsArrivedCount);
             System.out.println("Total DAGs with >=1 task scheduled: " + dagsWithScheduledTasks.size());
+            if (shutdownIncompleteDagCount > 0) {
+                System.out.println("Total DAGs incomplete at shutdown: " + shutdownIncompleteDagCount);
+            }
             long totalDagRuntimeMs = shutdownTotalDagRunTimeMs > 0 ? shutdownTotalDagRunTimeMs : totalDagRunTimeMs;
             int denom = shutdownDagCount > 0 ? shutdownDagCount : dagsWithScheduledTasks.size();
             System.out.println("Total DAG runtime (sum of makespans): " + totalDagRuntimeMs + " ms");
             if (denom > 0) {
-                System.out.println("Average DAG makespan (over scheduled DAGs): "
+                System.out.println("Average DAG makespan (completed DAGs only): "
                         + (totalDagRuntimeMs / (double) denom) + " ms");
             }
             System.out.println("==========================================");
