@@ -75,21 +75,42 @@ public class NomadicMobility extends MobilityModel {
 	public void initialize() {
 		treeMapArray = new ArrayList<TreeMap<Double, Location>>();
 		
-		// Create exponential distribution generators for residence time at each location
-		ExponentialDistribution[] expRngList = new ExponentialDistribution[SimSettings.getInstance().getNumOfEdgeDatacenters()];
+		// Build list of edge datacenters only (exclude tier="CLOUD")
+		List<Element> edgeDatacenters = new ArrayList<Element>();
 
-		// Create exponential RNG for each datacenter location based on attractiveness
+		// Create exponential RNG for each edge datacenter location based on attractiveness
 		Document doc = SimSettings.getInstance().getEdgeDevicesDocument();
 		NodeList datacenterList = doc.getElementsByTagName("datacenter");
+		int maxWlanId = -1;
 		for (int i = 0; i < datacenterList.getLength(); i++) {
 			Node datacenterNode = datacenterList.item(i);
 			Element datacenterElement = (Element) datacenterNode;
+			String tier = datacenterElement.getAttribute("tier");
+			if (tier != null && tier.equalsIgnoreCase("CLOUD")) {
+				continue;
+			}
+			edgeDatacenters.add(datacenterElement);
+			Element location = (Element)datacenterElement.getElementsByTagName("location").item(0);
+			int wlan_id = Integer.parseInt(location.getElementsByTagName("wlan_id").item(0).getTextContent());
+			if (wlan_id > maxWlanId) {
+				maxWlanId = wlan_id;
+			}
+		}
+
+		int expSize = Math.max(SimSettings.getInstance().getNumOfEdgeDatacenters(), maxWlanId + 1);
+		ExponentialDistribution[] expRngList = new ExponentialDistribution[expSize];
+
+		for (int i = 0; i < edgeDatacenters.size(); i++) {
+			Element datacenterElement = edgeDatacenters.get(i);
 			Element location = (Element)datacenterElement.getElementsByTagName("location").item(0);
 			String attractiveness = location.getElementsByTagName("attractiveness").item(0).getTextContent();
 			int placeTypeIndex = Integer.parseInt(attractiveness);
-			
+			int wlan_id = Integer.parseInt(location.getElementsByTagName("wlan_id").item(0).getTextContent());
+
 			// Create exponential distribution based on location attractiveness (mean residence time)
-			expRngList[i] = new ExponentialDistribution(SimSettings.getInstance().getMobilityLookUpTable()[placeTypeIndex]);
+			if (wlan_id >= 0 && wlan_id < expRngList.length) {
+				expRngList[wlan_id] = new ExponentialDistribution(SimSettings.getInstance().getMobilityLookUpTable()[placeTypeIndex]);
+			}
 		}
 		
 		// Initialize timeline maps and assign initial positions to mobile devices
@@ -97,9 +118,8 @@ public class NomadicMobility extends MobilityModel {
 			treeMapArray.add(i, new TreeMap<Double, Location>());
 			
 			// Randomly assign initial location to each device
-			int randDatacenterId = SimUtils.getRandomNumber(0, SimSettings.getInstance().getNumOfEdgeDatacenters()-1);
-			Node datacenterNode = datacenterList.item(randDatacenterId);
-			Element datacenterElement = (Element) datacenterNode;
+			int randDatacenterId = SimUtils.getRandomNumber(0, edgeDatacenters.size()-1);
+			Element datacenterElement = edgeDatacenters.get(randDatacenterId);
 			Element location = (Element)datacenterElement.getElementsByTagName("location").item(0);
 			String attractiveness = location.getElementsByTagName("attractiveness").item(0).getTextContent();
 			int placeTypeIndex = Integer.parseInt(attractiveness);
@@ -118,20 +138,19 @@ public class NomadicMobility extends MobilityModel {
 			// Continue generating location changes until simulation end time
 			while(treeMap.lastKey() < SimSettings.getInstance().getSimulationTime()) {				
 				boolean placeFound = false;
-				int currentLocationId = treeMap.lastEntry().getValue().getServingWlanId();
-				// Sample residence time from exponential distribution for current location
-				double waitingTime = expRngList[currentLocationId].sample();
-				
-				// Select a new location different from current location
-				while(placeFound == false){
-					int newDatacenterId = SimUtils.getRandomNumber(0,SimSettings.getInstance().getNumOfEdgeDatacenters()-1);
-					// Ensure device moves to a different location (unless only one location exists)
-					if(SimSettings.getInstance().getNumOfEdgeDatacenters() == 1 || newDatacenterId != currentLocationId){
-						placeFound = true;
-						// Extract new location information from XML configuration
-						Node datacenterNode = datacenterList.item(newDatacenterId);
-						Element datacenterElement = (Element) datacenterNode;
-						Element location = (Element)datacenterElement.getElementsByTagName("location").item(0);
+			int currentLocationId = treeMap.lastEntry().getValue().getServingWlanId();
+			// Sample residence time from exponential distribution for current location
+			double waitingTime = expRngList[currentLocationId].sample();
+			
+			// Select a new location different from current location
+			while(placeFound == false){
+				int newDatacenterId = SimUtils.getRandomNumber(0, edgeDatacenters.size()-1);
+				// Ensure device moves to a different location (unless only one location exists)
+				if(edgeDatacenters.size() == 1 || newDatacenterId != currentLocationId){
+					placeFound = true;
+					// Extract new location information from XML configuration
+					Element datacenterElement = edgeDatacenters.get(newDatacenterId);
+					Element location = (Element)datacenterElement.getElementsByTagName("location").item(0);
 						String attractiveness = location.getElementsByTagName("attractiveness").item(0).getTextContent();
 						int placeTypeIndex = Integer.parseInt(attractiveness);
 						int wlan_id = Integer.parseInt(location.getElementsByTagName("wlan_id").item(0).getTextContent());
