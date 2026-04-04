@@ -2,10 +2,10 @@
 <edge_devices>
 	<!-- 8 edge datacenters for DAG_APP sample -->
 	<datacenter arch="x86" os="Linux" vmm="Xen">
-		<costPerBw>0.00000001</costPerBw>
+		<costPerBw>0.00000000000001</costPerBw>
 		<costPerSec>0.00000000000021</costPerSec>
-		<costPerMem>0.05</costPerMem>
-		<costPerStorage>0.1</costPerStorage>
+		<costPerMem>0.0</costPerMem>
+		<costPerStorage>0.0</costPerStorage>
 		<location>
 			<x_pos>2</x_pos>
 			<y_pos>0</y_pos>
@@ -38,10 +38,10 @@
 
 	<!-- Repeat for wlan_id 1..7 -->
 	<datacenter arch="x86" os="Linux" vmm="Xen">
-		<costPerBw>0.00000001</costPerBw>
+		<costPerBw>0.00000000000001</costPerBw>
 		<costPerSec>0.00000000000021</costPerSec>
-		<costPerMem>0.05</costPerMem>
-		<costPerStorage>0.1</costPerStorage>
+		<costPerMem>0.0</costPerMem>
+		<costPerStorage>0.0</costPerStorage>
 		<location>
 			<x_pos>0</x_pos>
 			<y_pos>2</y_pos>
@@ -73,10 +73,10 @@
 	</datacenter>
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
-		<costPerBw>0.00000001</costPerBw>
+		<costPerBw>0.00000000000001</costPerBw>
 		<costPerSec>0.00000000000021</costPerSec>
-		<costPerMem>0.05</costPerMem>
-		<costPerStorage>0.1</costPerStorage>
+		<costPerMem>0.0</costPerMem>
+		<costPerStorage>0.0</costPerStorage>
 		<location>
 			<x_pos>-2</x_pos>
 			<y_pos>0</y_pos>
@@ -108,10 +108,10 @@
 	</datacenter>
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
-		<costPerBw>0.00000001</costPerBw>
+		<costPerBw>0.00000000000001</costPerBw>
 		<costPerSec>0.00000000000021</costPerSec>
-		<costPerMem>0.05</costPerMem>
-		<costPerStorage>0.1</costPerStorage>
+		<costPerMem>0.0</costPerMem>
+		<costPerStorage>0.0</costPerStorage>
 		<location>
 			<x_pos>0</x_pos>
 			<y_pos>-2</y_pos>
@@ -143,10 +143,10 @@
 	</datacenter>
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
-		<costPerBw>0.00000001</costPerBw>
+		<costPerBw>0.00000000000001</costPerBw>
 		<costPerSec>0.00000000000021</costPerSec>
-		<costPerMem>0.05</costPerMem>
-		<costPerStorage>0.1</costPerStorage>
+		<costPerMem>0.0</costPerMem>
+		<costPerStorage>0.0</costPerStorage>
 		<location>
 			<x_pos>3</x_pos>
 			<y_pos>3</y_pos>
@@ -178,10 +178,10 @@
 	</datacenter>
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
-		<costPerBw>0.00000001</costPerBw>
+		<costPerBw>0.00000000000001</costPerBw>
 		<costPerSec>0.00000000000021</costPerSec>
-		<costPerMem>0.05</costPerMem>
-		<costPerStorage>0.1</costPerStorage>
+		<costPerMem>0.0</costPerMem>
+		<costPerStorage>0.0</costPerStorage>
 		<location>
 			<x_pos>-3</x_pos>
 			<y_pos>3</y_pos>
@@ -213,10 +213,10 @@
 	</datacenter>
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
-		<costPerBw>0.00000001</costPerBw>
+		<costPerBw>0.00000000000001</costPerBw>
 		<costPerSec>0.00000000000021</costPerSec>
-		<costPerMem>0.05</costPerMem>
-		<costPerStorage>0.1</costPerStorage>
+		<costPerMem>0.0</costPerMem>
+		<costPerStorage>0.0</costPerStorage>
 		<location>
 			<x_pos>-3</x_pos>
 			<y_pos>-3</y_pos>
@@ -248,10 +248,10 @@
 	</datacenter>
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
-		<costPerBw>0.00000001</costPerBw>
+		<costPerBw>0.00000000000001</costPerBw>
 		<costPerSec>0.00000000000021</costPerSec>
-		<costPerMem>0.05</costPerMem>
-		<costPerStorage>0.1</costPerStorage>
+		<costPerMem>0.0</costPerMem>
+		<costPerStorage>0.0</costPerStorage>
 		<location>
 			<x_pos>3</x_pos>
 			<y_pos>-3</y_pos>
