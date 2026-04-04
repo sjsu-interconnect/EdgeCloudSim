@@ -33,6 +33,12 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
     public int getDeviceToOffload(Task task) {
         PlacementDecision decision = getPolicyDecision(task);
         if (decision.destTier == PlacementDecision.TIER_CLOUD) {
+            List<org.cloudbus.cloudsim.Datacenter> clouds =
+                    SimManager.getInstance().getCloudServerManager().getDatacenterList();
+            if (clouds != null && !clouds.isEmpty()) {
+                int idx = Math.max(0, Math.min(decision.destDatacenterId, clouds.size() - 1));
+                return clouds.get(idx).getId();
+            }
             return SimSettings.CLOUD_DATACENTER_ID;
         } else {
             return SimSettings.GENERIC_EDGE_DEVICE_ID;
@@ -116,21 +122,25 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         }
 
         // Cloud Tier
-        state.vms[PlacementDecision.TIER_CLOUD] = new ClusterState.VMInfo[1][]; // Cloud is usually one DC in
-                                                                                // EdgeCloudSim
-        List<CloudVM> cloudVms = SimManager.getInstance().getCloudServerManager().getVmList(0);
-        state.vms[PlacementDecision.TIER_CLOUD][0] = new ClusterState.VMInfo[cloudVms.size()];
-        for (int vmIdx = 0; vmIdx < cloudVms.size(); vmIdx++) {
-            CloudVM cvm = cloudVms.get(vmIdx);
-            state.vms[PlacementDecision.TIER_CLOUD][0][vmIdx] = new ClusterState.VMInfo(
-                    cvm.getId(), 0, PlacementDecision.TIER_CLOUD, cvm.getMips());
-            ClusterState.VMInfo info = state.vms[PlacementDecision.TIER_CLOUD][0][vmIdx];
-            info.queuedTaskCount = cvm.getCloudletScheduler().getCloudletExecList().size();
-            double util = cvm.getCloudletScheduler().getTotalUtilizationOfCpu(CloudSim.clock());
-            util = Math.max(0.0, Math.min(1.0, util));
-            double ramMb = cvm.getRam();
-            info.freeMemoryMb = Math.max(0.0, ramMb * (1.0 - util));
-            info.freeGpuMemoryMb = Math.max(0.0, ramMb * (1.0 - util));
+        List<org.cloudbus.cloudsim.Datacenter> clouds =
+                SimManager.getInstance().getCloudServerManager().getDatacenterList();
+        int numCloudDcs = clouds != null ? clouds.size() : 0;
+        state.vms[PlacementDecision.TIER_CLOUD] = new ClusterState.VMInfo[numCloudDcs][];
+        for (int dc = 0; dc < numCloudDcs; dc++) {
+            List<CloudVM> cloudVms = SimManager.getInstance().getCloudServerManager().getVmList(dc);
+            state.vms[PlacementDecision.TIER_CLOUD][dc] = new ClusterState.VMInfo[cloudVms.size()];
+            for (int vmIdx = 0; vmIdx < cloudVms.size(); vmIdx++) {
+                CloudVM cvm = cloudVms.get(vmIdx);
+                state.vms[PlacementDecision.TIER_CLOUD][dc][vmIdx] = new ClusterState.VMInfo(
+                        cvm.getId(), dc, PlacementDecision.TIER_CLOUD, cvm.getMips());
+                ClusterState.VMInfo info = state.vms[PlacementDecision.TIER_CLOUD][dc][vmIdx];
+                info.queuedTaskCount = cvm.getCloudletScheduler().getCloudletExecList().size();
+                double util = cvm.getCloudletScheduler().getTotalUtilizationOfCpu(CloudSim.clock());
+                util = Math.max(0.0, Math.min(1.0, util));
+                double ramMb = cvm.getRam();
+                info.freeMemoryMb = Math.max(0.0, ramMb * (1.0 - util));
+                info.freeGpuMemoryMb = Math.max(0.0, ramMb * (1.0 - util));
+            }
         }
 
         return state;

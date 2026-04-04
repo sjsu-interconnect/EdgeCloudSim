@@ -20,7 +20,9 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.Properties;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -44,6 +46,7 @@ public class SimSettings {
 	 * costPerMem, costPerStorage]
 	 */
 	public static Map<Integer, Double[]> datacenterCosts = new HashMap<>();
+	private final Set<Integer> cloudDatacenterIds = new HashSet<>();
 
 	/** Simulation time when client activities begin (in seconds) */
 	public static final double CLIENT_ACTIVITY_START_TIME = 10;
@@ -354,9 +357,6 @@ public class SimSettings {
 	/**
 	 * returns the parsed XML document for edge_devices.xml
 	 */
-	public Document getEdgeDevicesDocument() {
-		return edgeDevicesDoc;
-	}
 
 	/**
 	 * returns simulation time (in seconds unit) from properties file
@@ -913,13 +913,13 @@ public class SimSettings {
 
 			NodeList datacenterList = edgeDevicesDoc.getElementsByTagName("datacenter");
 			for (int i = 0; i < datacenterList.getLength(); i++) {
-				NUM_OF_EDGE_DATACENTERS++;
 				Node datacenterNode = datacenterList.item(i);
 
 				Element datacenterElement = (Element) datacenterNode;
 				isAttributePresent(datacenterElement, "arch");
 				isAttributePresent(datacenterElement, "os");
 				isAttributePresent(datacenterElement, "vmm");
+				boolean isCloud = isCloudDatacenterElement(datacenterElement);
 				isElementPresent(datacenterElement, "costPerBw");
 				isElementPresent(datacenterElement, "costPerSec");
 				isElementPresent(datacenterElement, "costPerMem");
@@ -928,9 +928,12 @@ public class SimSettings {
 						.parseDouble(datacenterElement.getElementsByTagName("costPerBw").item(0).getTextContent());
 				double edgeCostPerSec = Double
 						.parseDouble(datacenterElement.getElementsByTagName("costPerSec").item(0).getTextContent());
-				sumEdgeCostPerBw += edgeCostPerBw;
-				sumEdgeCostPerSec += edgeCostPerSec;
-				edgeDcCount++;
+				if (!isCloud) {
+					NUM_OF_EDGE_DATACENTERS++;
+					sumEdgeCostPerBw += edgeCostPerBw;
+					sumEdgeCostPerSec += edgeCostPerSec;
+					edgeDcCount++;
+				}
 
 				Element location = (Element) datacenterElement.getElementsByTagName("location").item(0);
 				isElementPresent(location, "attractiveness");
@@ -945,7 +948,9 @@ public class SimSettings {
 
 				NodeList hostList = datacenterElement.getElementsByTagName("host");
 				for (int j = 0; j < hostList.getLength(); j++) {
-					NUM_OF_EDGE_HOSTS++;
+					if (!isCloud) {
+						NUM_OF_EDGE_HOSTS++;
+					}
 					Node hostNode = hostList.item(j);
 
 					Element hostElement = (Element) hostNode;
@@ -956,7 +961,9 @@ public class SimSettings {
 
 					NodeList vmList = hostElement.getElementsByTagName("VM");
 					for (int k = 0; k < vmList.getLength(); k++) {
-						NUM_OF_EDGE_VMS++;
+						if (!isCloud) {
+							NUM_OF_EDGE_VMS++;
+						}
 						Node vmNode = vmList.item(k);
 
 						Element vmElement = (Element) vmNode;
@@ -978,5 +985,43 @@ public class SimSettings {
 			e.printStackTrace();
 			System.exit(1);
 		}
+	}
+
+	private boolean isCloudDatacenterElement(Element datacenterElement) {
+		if (datacenterElement == null) {
+			return false;
+		}
+		String tier = datacenterElement.getAttribute("tier");
+		return tier != null && tier.equalsIgnoreCase("CLOUD");
+	}
+
+	public void registerCloudDatacenterId(int datacenterId) {
+		cloudDatacenterIds.add(datacenterId);
+	}
+
+	public boolean isCloudDatacenterId(int datacenterId) {
+		if (datacenterId == CLOUD_DATACENTER_ID) {
+			return true;
+		}
+		return cloudDatacenterIds.contains(datacenterId);
+	}
+
+	public int getNumOfCloudDatacentersFromXml() {
+		if (edgeDevicesDoc == null) {
+			return 0;
+		}
+		NodeList datacenterList = edgeDevicesDoc.getElementsByTagName("datacenter");
+		int count = 0;
+		for (int i = 0; i < datacenterList.getLength(); i++) {
+			Element datacenterElement = (Element) datacenterList.item(i);
+			if (isCloudDatacenterElement(datacenterElement)) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	public Document getEdgeDevicesDocument() {
+		return edgeDevicesDoc;
 	}
 }

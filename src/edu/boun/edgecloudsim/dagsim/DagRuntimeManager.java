@@ -260,7 +260,7 @@ public class DagRuntimeManager extends SimEntity {
         task.setStartTimeMs(cloudlet.getExecStartTime() * 1000.0);
         task.setAssignedVmId(cloudlet.getAssociatedVmId());
         task.setAssignedDatacenterId(cloudlet.getAssociatedDatacenterId());
-        int tier = (cloudlet.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID)
+        int tier = (SimSettings.getInstance().isCloudDatacenterId(cloudlet.getAssociatedDatacenterId()))
                 ? SimSettings.VM_TYPES.CLOUD_VM.ordinal()
                 : SimSettings.VM_TYPES.EDGE_VM.ordinal();
         task.setAssignedTier(tier);
