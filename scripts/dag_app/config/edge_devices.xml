@@ -3,7 +3,7 @@
 	<!-- 8 edge datacenters for DAG_APP sample -->
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>0.0003</costPerSec>
+		<costPerSec>0.000000015</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -14,20 +14,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>32</core>
-				<mips>80000</mips>
+				<core>64</core>
+				<mips>160000</mips>
 				<ram>8000</ram>
 				<storage>200000</storage>
 				<VMs>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
@@ -39,7 +39,7 @@
 	<!-- Repeat for wlan_id 1..7 -->
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>0.0003</costPerSec>
+		<costPerSec>0.000000015</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -50,20 +50,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>32</core>
-				<mips>80000</mips>
+				<core>64</core>
+				<mips>160000</mips>
 				<ram>8000</ram>
 				<storage>200000</storage>
 				<VMs>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
@@ -74,7 +74,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>0.0003</costPerSec>
+		<costPerSec>0.000000015</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -85,20 +85,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>32</core>
-				<mips>80000</mips>
+				<core>64</core>
+				<mips>160000</mips>
 				<ram>8000</ram>
 				<storage>200000</storage>
 				<VMs>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
@@ -109,7 +109,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>0.0003</costPerSec>
+		<costPerSec>0.000000015</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -120,20 +120,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>32</core>
-				<mips>80000</mips>
+				<core>64</core>
+				<mips>160000</mips>
 				<ram>8000</ram>
 				<storage>200000</storage>
 				<VMs>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
@@ -144,7 +144,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>0.0003</costPerSec>
+		<costPerSec>0.000000015</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -155,20 +155,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>32</core>
-				<mips>80000</mips>
+				<core>64</core>
+				<mips>160000</mips>
 				<ram>8000</ram>
 				<storage>200000</storage>
 				<VMs>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
@@ -179,7 +179,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>0.0003</costPerSec>
+		<costPerSec>0.000000015</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -190,20 +190,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>32</core>
-				<mips>80000</mips>
+				<core>64</core>
+				<mips>160000</mips>
 				<ram>8000</ram>
 				<storage>200000</storage>
 				<VMs>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
@@ -214,7 +214,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>0.0003</costPerSec>
+		<costPerSec>0.000000015</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -225,20 +225,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>32</core>
-				<mips>80000</mips>
+				<core>64</core>
+				<mips>160000</mips>
 				<ram>8000</ram>
 				<storage>200000</storage>
 				<VMs>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
@@ -249,7 +249,7 @@
 
 	<datacenter arch="x86" os="Linux" vmm="Xen">
 		<costPerBw>0.00000001</costPerBw>
-		<costPerSec>0.0003</costPerSec>
+		<costPerSec>0.000000015</costPerSec>
 		<costPerMem>0.05</costPerMem>
 		<costPerStorage>0.1</costPerStorage>
 		<location>
@@ -260,20 +260,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>32</core>
-				<mips>80000</mips>
+				<core>64</core>
+				<mips>160000</mips>
 				<ram>8000</ram>
 				<storage>200000</storage>
 				<VMs>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
 					<VM vmm="Xen">
-						<core>8</core>
-						<mips>20000</mips>
+						<core>16</core>
+						<mips>40000</mips>
 						<ram>2000</ram>
 						<storage>50000</storage>
 					</VM>
