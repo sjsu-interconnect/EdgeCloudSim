@@ -5,9 +5,10 @@ from gymnasium import spaces
 class SchedulingEnvironment(gym.Env):
     def __init__(self, num_dags=1000, num_edge_dc=8, num_cloud_dc=1):
         super().__init__()
+
+        self.current_state = None
+
         self.num_dags = num_dags
-        self.current_step = 0
-        self.max_steps = 1000
         self.completed_dags = 0
         self.current_cost = 0
         self.current_time = 0
@@ -24,7 +25,7 @@ class SchedulingEnvironment(gym.Env):
         self.num_cloud_dc = num_cloud_dc
         self.total_dc = self.num_edge_dc + self.num_cloud_dc
 
-        OBSERVATION_SIZE = 2 + (6 * self.total_dc)
+        OBSERVATION_SIZE = 2 + 4 + (6 * self.total_dc)
 
         #action space: pick type, data center
         self.max_dc = max(self.num_edge_dc, self.num_cloud_dc)
@@ -34,40 +35,23 @@ class SchedulingEnvironment(gym.Env):
         self.observation_space = spaces.Box(low = 0, high = 1, shape=(OBSERVATION_SIZE, ), dtype=np.float32)
 
     def reset(self, seed=42, options=None):
-        #reset the simulation
-        #get first task in priority queue
-        #return observation and information
         super().reset(seed=seed)
-        self.current_step = 0
         self.completed_dags = 0
         self.current_cost = 0
         self.current_time = 0
-        obs = self._get_obs()
+        self.current_state = None
+
+        obs = np.zeros(self.observation_space.shape, dtype=np.float32)
         info = self._get_info()
 
         return obs, info
 
     def step(self, action):
-        #action
-        #send to edgecloudsim
-        #get cost, time
-        #compute reward
-        #ready next task in priority queue
-        #return observation, reward, terminated, truncated, info
-        self.current_cost = self.np_random.uniform(1, 100)
-        self.current_time = self.np_random.uniform(1, 100)
-
         reward = self._get_reward()
-        
-        dag_completed = False
-        if dag_completed:
-            self.completed_dags += 1
-            
         terminated = self._is_terminated()
-        obs = self._get_obs()
-
+        obs = self._get_obs(self.current_state)
         info = self._get_info()
-
+            
         return obs, reward, terminated, False, info
     
     def _get_reward(self):
@@ -89,6 +73,13 @@ class SchedulingEnvironment(gym.Env):
         
         #global features
         #number of tasks in queue for vms on dc, amount of money used, active dags
+
+        global_features = [
+            self.normalize(budget.get("budgetFractionUsed", 0.0)),        # how much budget used
+            self.normalize(budget.get("remainingBudget", 0.0) / 100.0),   # remaining budget
+            self.normalize(queue_length.get("activeDagCount", 0) / 100.0), # active dags
+            self.normalize(queue_length.get("totalQueueLen", 0) / 500.0),  # total queue
+        ]
 
         #features of current task
         #mips, size of task
@@ -112,34 +103,48 @@ class SchedulingEnvironment(gym.Env):
             features = self._get_data_center_features(cloud_dc_vms, dc_id)
             dc_features.extend(features)
 
-        obs = np.array(task_features + dc_features, dtype=np.float32)
+        obs = np.array(task_features + global_features + dc_features, dtype=np.float32)
         
         return obs
 
     def _is_terminated(self):
-        return self.completed_dags == self.num_dags
+        return self.completed_dags >= self.num_dags
 
     #action masking, edge/cloud -> data center
-    def _get_action_mask(self, state):
-        mask = np.zeros((2, self.max_dc), dtype=bool)
+    def _get_action_mask(self, state=None):
+        #initial state
+        if state is None:
+            tier_mask = np.ones(2, dtype=bool)
+            dc_mask = np.zeros(self.max_dc, dtype=bool)
+            return np.concatenate([tier_mask, dc_mask])
 
         #in current state, get edge and cloud vms
         current_state = state["cluster"]
         edge_vms = current_state.get("edgeVms", [])
         cloud_vms = current_state.get("cloudVms", [])
+
+        #mask for edge/cloud tier
+        tier_mask = np.zeros(2, dtype=bool)
+        #mask for vms in data centers
+        dc_mask = np.zeros(self.max_dc, dtype=bool)
+
+        if edge_vms:
+            tier_mask[0] = True
+        if cloud_vms:
+            tier_mask[1] = True
         
         #get data center id from vm and check
         for vm in edge_vms:
             dc_id = vm["dcId"]
             if 0 <= dc_id < self.max_dc:
-                mask[0, dc_id] = True
+                dc_mask[dc_id] = True
         
         for vm in cloud_vms:
             dc_id = vm["dcId"]
             if 0 <= dc_id < self.max_dc:
-                mask[1, dc_id] = True
+                dc_mask[dc_id] = True
         
-        return mask
+        return np.concatenate([tier_mask, dc_mask])
     
     def _get_info(self):
         return {
