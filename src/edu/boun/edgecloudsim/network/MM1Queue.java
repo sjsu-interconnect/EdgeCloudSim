@@ -380,7 +380,7 @@ public class MM1Queue extends NetworkModel {
 	 * @return WLAN download delay in seconds
 	 */
 	private double getWlanDownloadDelay(Location accessPointLocation, double time) {
-		return calculateMM1(0,
+		return calculateMM1(SimSettings.getInstance().getEdgePropagationDelay(),
 				SimSettings.getInstance().getWlanBandwidth(),
 				WlanPoissonMean,
 				avgTaskOutputSize,
@@ -398,7 +398,7 @@ public class MM1Queue extends NetworkModel {
 	 * @return WLAN upload delay in seconds
 	 */
 	private double getWlanUploadDelay(Location accessPointLocation, double time) {
-		return calculateMM1(0,
+		return calculateMM1(SimSettings.getInstance().getEdgePropagationDelay(),
 				SimSettings.getInstance().getWlanBandwidth(),
 				WlanPoissonMean,
 				avgTaskInputSize,

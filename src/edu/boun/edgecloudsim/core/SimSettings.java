@@ -98,6 +98,7 @@ public class SimSettings {
 	private double WAN_PROPAGATION_DELAY; // Wide Area Network delay (seconds)
 	private double GSM_PROPAGATION_DELAY; // GSM network delay (seconds)
 	private double LAN_INTERNAL_DELAY; // Local Area Network delay (seconds)
+	private double EDGE_PROPAGATION_DELAY; // Edge access propagation delay (seconds)
 	private int BANDWITH_WLAN; // WLAN bandwidth (Mbps)
 	private int BANDWITH_MAN; // Metropolitan Area Network bandwidth (Mbps)
 	private int BANDWITH_WAN; // Wide Area Network bandwidth (Mbps)
@@ -250,6 +251,7 @@ public class SimSettings {
 			WAN_PROPAGATION_DELAY = Double.parseDouble(prop.getProperty("wan_propagation_delay", "0"));
 			GSM_PROPAGATION_DELAY = Double.parseDouble(prop.getProperty("gsm_propagation_delay", "0"));
 			LAN_INTERNAL_DELAY = Double.parseDouble(prop.getProperty("lan_internal_delay", "0"));
+			EDGE_PROPAGATION_DELAY = Double.parseDouble(prop.getProperty("edge_propagation_delay", "0"));
 			BANDWITH_WLAN = 1000 * Integer.parseInt(prop.getProperty("wlan_bandwidth"));
 			BANDWITH_MAN = 1000 * Integer.parseInt(prop.getProperty("man_bandwidth", "0"));
 			BANDWITH_WAN = 1000 * Integer.parseInt(prop.getProperty("wan_bandwidth", "0"));
@@ -436,6 +438,13 @@ public class SimSettings {
 	 */
 	public double getInternalLanDelay() {
 		return LAN_INTERNAL_DELAY;
+	}
+
+	/**
+	 * returns edge access propagation delay (in second unit) from properties file
+	 */
+	public double getEdgePropagationDelay() {
+		return EDGE_PROPAGATION_DELAY;
 	}
 
 	/**
