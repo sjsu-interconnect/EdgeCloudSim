@@ -37,18 +37,23 @@ def get_action():
         obs = env._get_obs(state)
     
     action_mask = env._get_action_mask(state)
+    print(f"[MASK] {action_mask}")
     action, _ = model.predict(obs, action_masks=action_mask)
+    action = int(action)
+
+    if action < env.num_edge_dc:
+        tier_name = "EDGE"
+        dc_idx = action
+    else:
+        tier_name = "CLOUD"
+        dc_idx = action - env.num_edge_dc
 
     last_action = action
     last_obs = obs
 
-    tier_idx = int(action[0])
-    dc_idx = int(action[1])
-    tier_name = "EDGE" if tier_idx == 0 else "CLOUD"
-
     #get vms from chosen data center
     cluster = state["cluster"]
-    if tier_idx == 0:
+    if tier_name == "EDGE":
         vm_list = cluster.get("edgeVms", [])
     else:
         vm_list = cluster.get("cloudVms", [])

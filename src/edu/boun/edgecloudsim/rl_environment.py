@@ -3,7 +3,7 @@ import gymnasium as gym
 from gymnasium import spaces
 
 class SchedulingEnvironment(gym.Env):
-    def __init__(self, num_dags=1000, num_edge_dc=8, num_cloud_dc=1):
+    def __init__(self, num_dags=100000, num_edge_dc=8, num_cloud_dc=1):
         super().__init__()
 
         self.current_state = None
@@ -28,8 +28,8 @@ class SchedulingEnvironment(gym.Env):
         OBSERVATION_SIZE = 2 + 4 + (6 * self.total_dc)
 
         #action space: pick type, data center
-        self.max_dc = max(self.num_edge_dc, self.num_cloud_dc)
-        self.action_space = spaces.MultiDiscrete([2, self.max_dc])
+        self.total_actions = self.num_edge_dc + self.num_cloud_dc
+        self.action_space = spaces.Discrete(self.total_actions)
 
         #observation/state space: receive task information + data center information
         self.observation_space = spaces.Box(low = 0, high = 1, shape=(OBSERVATION_SIZE, ), dtype=np.float32)
@@ -113,38 +113,29 @@ class SchedulingEnvironment(gym.Env):
     #action masking, edge/cloud -> data center
     def _get_action_mask(self, state=None):
         #initial state
+        mask = np.zeros(self.total_actions, dtype=bool)
+
         if state is None:
-            tier_mask = np.ones(2, dtype=bool)
-            dc_mask = np.zeros(self.max_dc, dtype=bool)
-            return np.concatenate([tier_mask, dc_mask])
+            mask[:] = True
+            return mask
 
         #in current state, get edge and cloud vms
         current_state = state["cluster"]
         edge_vms = current_state.get("edgeVms", [])
         cloud_vms = current_state.get("cloudVms", [])
-
-        #mask for edge/cloud tier
-        tier_mask = np.zeros(2, dtype=bool)
-        #mask for vms in data centers
-        dc_mask = np.zeros(self.max_dc, dtype=bool)
-
-        if edge_vms:
-            tier_mask[0] = True
-        if cloud_vms:
-            tier_mask[1] = True
         
         #get data center id from vm and check
         for vm in edge_vms:
             dc_id = vm["dcId"]
-            if 0 <= dc_id < self.max_dc:
-                dc_mask[dc_id] = True
+            if 0 <= dc_id < self.num_edge_dc:
+                mask[dc_id] = True
         
         for vm in cloud_vms:
             dc_id = vm["dcId"]
-            if 0 <= dc_id < self.max_dc:
-                dc_mask[dc_id] = True
+            if 0 <= dc_id < self.num_cloud_dc:
+                mask[self.num_edge_dc + dc_id] = True
         
-        return np.concatenate([tier_mask, dc_mask])
+        return mask
     
     def _get_info(self):
         return {
