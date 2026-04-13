@@ -95,6 +95,9 @@ public class SampleScenarioFactory implements ScenarioFactory {
 		} else if (orchestratorPolicy.equalsIgnoreCase("EDGE_FIRST_GLOBAL")) {
 			return new DagAwareOrchestrator(orchestratorPolicy, simScenario,
 					new edu.boun.edgecloudsim.dagsim.scheduling.EdgeFirstGlobalPolicy());
+		} else if (orchestratorPolicy.equalsIgnoreCase("NET_AWARE_EFT")) {
+			return new DagAwareOrchestrator(orchestratorPolicy, simScenario,
+					new edu.boun.edgecloudsim.dagsim.scheduling.NetAwareEFTPolicy());
 		} else if (orchestratorPolicy.equalsIgnoreCase("GLOBAL_BEST_FIT")) {
 			return new DagAwareOrchestrator(orchestratorPolicy, simScenario,
 					new edu.boun.edgecloudsim.dagsim.scheduling.GlobalBestFitPolicy());
