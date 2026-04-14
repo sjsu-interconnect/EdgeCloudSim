@@ -59,7 +59,7 @@ def main() -> int:
         any_data = True
         x = list(range(1, len(makespans) + 1))
         smooth = moving_avg(makespans, args.window)
-        plt.plot(x, smooth, label=f"{label} (MA{args.window})", linewidth=2.0)
+        plt.plot(x, smooth, label=f"{label}", linewidth=2.0)
 
     if not any_data:
         raise SystemExit("No makespans found in any logs.")
@@ -67,7 +67,7 @@ def main() -> int:
     plt.xlabel("DAG Episode")
     plt.ylabel("Makespan (ms)")
     plt.title("DAG Makespan Curves")
-    plt.legend()
+    plt.legend(loc="upper right")
     plt.tight_layout()
     plt.savefig(args.out, dpi=150)
     print(f"Wrote {args.out}")
