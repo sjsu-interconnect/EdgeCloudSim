@@ -17,7 +17,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>1100</mips>
+				<mips>2200</mips>
 				<ram>14000</ram>
 				<storage>500000</storage>
 				<VMs>
@@ -58,7 +58,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>1100</mips>
+				<mips>2200</mips>
 				<ram>14000</ram>
 				<storage>500000</storage>
 				<VMs>
@@ -99,7 +99,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>1100</mips>
+				<mips>2200</mips>
 				<ram>14000</ram>
 				<storage>500000</storage>
 				<VMs>
@@ -140,7 +140,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>1100</mips>
+				<mips>2200</mips>
 				<ram>14000</ram>
 				<storage>500000</storage>
 				<VMs>
@@ -181,7 +181,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>1100</mips>
+				<mips>2200</mips>
 				<ram>14000</ram>
 				<storage>500000</storage>
 				<VMs>
@@ -222,7 +222,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>1100</mips>
+				<mips>2200</mips>
 				<ram>14000</ram>
 				<storage>500000</storage>
 				<VMs>
@@ -263,7 +263,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>1100</mips>
+				<mips>2200</mips>
 				<ram>14000</ram>
 				<storage>500000</storage>
 				<VMs>
@@ -304,7 +304,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>1100</mips>
+				<mips>2200</mips>
 				<ram>14000</ram>
 				<storage>500000</storage>
 				<VMs>
@@ -347,7 +347,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>3500</mips>
+				<mips>14000</mips>
 				<ram>49152</ram>
 				<storage>1100000</storage>
 				<VMs>
@@ -382,7 +382,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>3500</mips>
+				<mips>14000</mips>
 				<ram>49152</ram>
 				<storage>1100000</storage>
 				<VMs>
@@ -417,7 +417,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>3500</mips>
+				<mips>14000</mips>
 				<ram>49152</ram>
 				<storage>1100000</storage>
 				<VMs>
@@ -452,7 +452,7 @@
 		<hosts>
 			<host>
 				<core>8</core>
-				<mips>3500</mips>
+				<mips>14000</mips>
 				<ram>49152</ram>
 				<storage>1100000</storage>
 				<VMs>
