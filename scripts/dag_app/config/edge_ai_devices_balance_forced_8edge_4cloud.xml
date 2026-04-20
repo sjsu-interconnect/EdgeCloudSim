@@ -331,7 +331,7 @@
 		</hosts>
 	</datacenter>
 
-	<!-- Four regional clouds: same per-VM shape as DAG_APP_EDGE_BALANCE_FORCED_5K single-cloud (14000 mips, 4 cores), two VMs each => 8 cloud VMs total vs former 6 (extra slack for completion under multi-edge congestion). -->
+	<!-- Four regional clouds: reduced capacity to avoid cloud dominance and encourage near-balanced edge/cloud usage. -->
 
 	<datacenter arch="x86" os="Linux" vmm="Xen" tier="CLOUD">
 		<costPerBw>0.00000000012</costPerBw>
@@ -346,32 +346,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>16</core>
-				<mips>14000</mips>
-				<ram>65536</ram>
-				<storage>2200000</storage>
+				<core>8</core>
+				<mips>8000</mips>
+				<ram>32000</ram>
+				<storage>1000000</storage>
 				<VMs>
 					<VM vmm="Xen">
 						<core>4</core>
-						<mips>14000</mips>
+						<mips>8000</mips>
 						<ram>16000</ram>
 						<storage>500000</storage>
 					</VM>
 					<VM vmm="Xen">
 						<core>4</core>
-						<mips>14000</mips>
-						<ram>16000</ram>
-						<storage>500000</storage>
-					</VM>
-					<VM vmm="Xen">
-						<core>4</core>
-						<mips>14000</mips>
-						<ram>16000</ram>
-						<storage>500000</storage>
-					</VM>
-					<VM vmm="Xen">
-						<core>4</core>
-						<mips>14000</mips>
+						<mips>8000</mips>
 						<ram>16000</ram>
 						<storage>500000</storage>
 					</VM>
@@ -393,32 +381,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>16</core>
-				<mips>14000</mips>
-				<ram>65536</ram>
-				<storage>2200000</storage>
+				<core>8</core>
+				<mips>8000</mips>
+				<ram>32000</ram>
+				<storage>1000000</storage>
 				<VMs>
 					<VM vmm="Xen">
 						<core>4</core>
-						<mips>14000</mips>
+						<mips>8000</mips>
 						<ram>16000</ram>
 						<storage>500000</storage>
 					</VM>
 					<VM vmm="Xen">
 						<core>4</core>
-						<mips>14000</mips>
-						<ram>16000</ram>
-						<storage>500000</storage>
-					</VM>
-					<VM vmm="Xen">
-						<core>4</core>
-						<mips>14000</mips>
-						<ram>16000</ram>
-						<storage>500000</storage>
-					</VM>
-					<VM vmm="Xen">
-						<core>4</core>
-						<mips>14000</mips>
+						<mips>8000</mips>
 						<ram>16000</ram>
 						<storage>500000</storage>
 					</VM>
@@ -440,32 +416,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>16</core>
-				<mips>14000</mips>
-				<ram>65536</ram>
-				<storage>2200000</storage>
+				<core>8</core>
+				<mips>8000</mips>
+				<ram>32000</ram>
+				<storage>1000000</storage>
 				<VMs>
 					<VM vmm="Xen">
 						<core>4</core>
-						<mips>14000</mips>
+						<mips>8000</mips>
 						<ram>16000</ram>
 						<storage>500000</storage>
 					</VM>
 					<VM vmm="Xen">
 						<core>4</core>
-						<mips>14000</mips>
-						<ram>16000</ram>
-						<storage>500000</storage>
-					</VM>
-					<VM vmm="Xen">
-						<core>4</core>
-						<mips>14000</mips>
-						<ram>16000</ram>
-						<storage>500000</storage>
-					</VM>
-					<VM vmm="Xen">
-						<core>4</core>
-						<mips>14000</mips>
+						<mips>8000</mips>
 						<ram>16000</ram>
 						<storage>500000</storage>
 					</VM>
@@ -487,32 +451,20 @@
 		</location>
 		<hosts>
 			<host>
-				<core>16</core>
-				<mips>14000</mips>
-				<ram>65536</ram>
-				<storage>2200000</storage>
+				<core>8</core>
+				<mips>8000</mips>
+				<ram>32000</ram>
+				<storage>1000000</storage>
 				<VMs>
 					<VM vmm="Xen">
 						<core>4</core>
-						<mips>14000</mips>
+						<mips>8000</mips>
 						<ram>16000</ram>
 						<storage>500000</storage>
 					</VM>
 					<VM vmm="Xen">
 						<core>4</core>
-						<mips>14000</mips>
-						<ram>16000</ram>
-						<storage>500000</storage>
-					</VM>
-					<VM vmm="Xen">
-						<core>4</core>
-						<mips>14000</mips>
-						<ram>16000</ram>
-						<storage>500000</storage>
-					</VM>
-					<VM vmm="Xen">
-						<core>4</core>
-						<mips>14000</mips>
+						<mips>8000</mips>
 						<ram>16000</ram>
 						<storage>500000</storage>
 					</VM>
