@@ -10,6 +10,8 @@ import edu.boun.edgecloudsim.edge_server.EdgeVM;
 import org.cloudbus.cloudsim.core.CloudSim;
 
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * An EdgeOrchestrator that delegates decisions to a pluggable SchedulingPolicy.
@@ -18,6 +20,7 @@ import java.util.List;
  */
 public class DagAwareOrchestrator extends EdgeOrchestrator {
     private final SchedulingPolicy schedulingPolicy;
+    private final Map<String, PlacementDecision> decisionCache = new ConcurrentHashMap<>();
 
     public DagAwareOrchestrator(String policyName, String simScenario, SchedulingPolicy schedulingPolicy) {
         super(policyName, simScenario);
@@ -31,7 +34,10 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
 
     @Override
     public int getDeviceToOffload(Task task) {
-        PlacementDecision decision = getPolicyDecision(task);
+        String key = taskKey(task);
+        PlacementDecision decision = decisionCache.computeIfAbsent(key, k -> getPolicyDecision(task));
+        // PlacementDecision decision = getPolicyDecision(task);
+
         if (decision.destTier == PlacementDecision.TIER_CLOUD) {
             return SimSettings.CLOUD_DATACENTER_ID;
         } else {
@@ -41,7 +47,13 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
 
     @Override
     public Vm getVmToOffload(Task task, int deviceId) {
-        PlacementDecision decision = getPolicyDecision(task);
+        String key = taskKey(task);
+
+        // PlacementDecision decision = getPolicyDecision(task);
+        PlacementDecision decision = decisionCache.remove(key);
+        if(decision == null) {
+            decision = getPolicyDecision(task);
+        }
 
         if (decision.destTier == PlacementDecision.TIER_CLOUD) {
             // Retrieve cloud VM
@@ -135,5 +147,11 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
 
     @Override
     public void startEntity() {
+    }
+
+    private String taskKey(Task task) {
+        String dagId = task.getDagId() != null ? task.getDagId() : "NA";
+        String taskId = task.getDagTaskId() != null ? task.getDagTaskId() : String.valueOf(task.getCloudletId());
+        return dagId + "::" + taskId;
     }
 }
