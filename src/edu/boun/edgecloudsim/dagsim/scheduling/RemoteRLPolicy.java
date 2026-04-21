@@ -42,7 +42,6 @@ public class RemoteRLPolicy implements SchedulingPolicy {
         this.actUrl = resolveEndpoint(serviceUrl, "/act");
         this.gson = new Gson();
         this.timeoutMs = SimSettings.getInstance().getRlHttpTimeoutMs();
-        System.out.println("### RemoteRLPolicy DEBUG BUILD LOADED ###");
     }
 
     @Override
@@ -58,14 +57,6 @@ public class RemoteRLPolicy implements SchedulingPolicy {
             payload.add("state", stateJson);
             payload.addProperty("trainingMode", SimSettings.getInstance().getRlTrainingMode());
             payload.add("actionMask", buildActionMask(state));
-
-            System.out.println(String.format(
-                "[RL_DECIDE] simTime=%.2f dag=%s task=%s trainingMode=%s",
-                state.currentTimeMs,
-                task.dagId,
-                task.taskId,
-                SimSettings.getInstance().getRlTrainingMode()
-            ));
 
             String responseJson = postRequest(actUrl, gson.toJson(payload), timeoutMs);
             JsonObject decisionObj = gson.fromJson(responseJson, JsonObject.class);
@@ -87,15 +78,6 @@ public class RemoteRLPolicy implements SchedulingPolicy {
                 trace.action = actionObj;
                 TRACE_BY_TASK.put(key(task.dagId, task.taskId), trace);
             }
-            System.out.println(String.format(
-                "[RL_DECIDE_RESULT] simTime=%.2f dag=%s task=%s tier=%s dc=%d vm=%d",
-                state.currentTimeMs,
-                task.dagId,
-                task.taskId,
-                tierName,
-                datacenterId,
-                vmId
-            ));
 
             return new PlacementDecision(tier, datacenterId, vmId);
 

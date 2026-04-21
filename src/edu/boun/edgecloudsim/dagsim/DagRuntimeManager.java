@@ -143,14 +143,6 @@ public class DagRuntimeManager extends SimEntity {
         String dagId = findDagIdForTask(task);
         DagRecord dag = activeDags.get(dagId);
 
-        System.out.println(String.format(
-        "[TASK_READY_EVENT] simTime=%.2f dag=%s task=%s state=%s",
-        CloudSim.clock(),
-        dagId,
-        task.getTaskId(),
-        String.valueOf(task.getState())
-        ));
-
         if (dag == null) {
             System.err.println("ERROR: DAG not found for task " + task.getTaskId());
             return;
@@ -217,15 +209,7 @@ public class DagRuntimeManager extends SimEntity {
                 "[%s] [%.2f] Task ready: %s of DAG %s — lengthMI=%d, execEdge=%.3fs, execCloud=%.3fs, in=%dB out=%dB",
                 appName, CloudSim.clock(), task.getTaskId(), dagId, lengthMi, execSecEdge, execSecCloud, inputBytes,
                 outputBytes));
-        
-        System.out.println(String.format(
-        "[TASK_SUBMIT_TO_SIM] simTime=%.2f dag=%s task=%s mobileDeviceId=%d lengthMi=%d",
-        CloudSim.clock(),
-        dagId,
-        task.getTaskId(),
-        mobileDeviceId,
-        lengthMi
-        ));
+
         CloudSim.send(getId(), SimManager.getInstance().getId(), 0.0, 0, tp);
         dagsWithScheduledTasks.add(dagId);
     }
@@ -237,12 +221,6 @@ public class DagRuntimeManager extends SimEntity {
     public void registerCloudletMapping(long cloudletId, String dagId, String taskId) {
         if (dagId != null && taskId != null) {
             cloudletToDagMap.put(cloudletId, new String[] { dagId, taskId });
-            System.out.println(String.format(
-                "[REGISTER_MAP] cloudletId=%d dag=%s task=%s",
-                cloudletId,
-                dagId,
-                taskId
-            ));
         }
     }
 
@@ -275,14 +253,6 @@ public class DagRuntimeManager extends SimEntity {
         TaskRecord task = dag.getTask(taskId);
         if (task == null)
             return;
-
-        System.out.println(String.format(
-            "[CLOUDLET_FINISHED] simTime=%.2f cloudletId=%d dag=%s task=%s",
-            CloudSim.clock(),
-            cloudletId,
-            dagId,
-            taskId
-        ));
 
         // Extract timing and split-up info from Task and SimLogger
         double finishClock = CloudSim.clock();
@@ -335,18 +305,7 @@ public class DagRuntimeManager extends SimEntity {
                 dagCostSoFar.getOrDefault(dagId, newCostSoFar),
                 ss.getRlBudgetCost(),
                 getActiveDagsCount());
-        
-        System.out.println(String.format(
-            "[POST_OBSERVE] simTime=%.2f dag=%s task=%s reward=%.4f done=%s latency=%.2f cost=%.4f",
-            CloudSim.clock(),
-            dagId,
-            taskId,
-            reward,
-            String.valueOf(done),
-            actualLatency,
-            actualCost
-        ));
-        
+
         RemoteRLPolicy.postObservation(
                 ss.getRlServiceUrl(),
                 ss.getRlHttpTimeoutMs(),
@@ -359,13 +318,6 @@ public class DagRuntimeManager extends SimEntity {
                 dagCostSoFar.getOrDefault(dagId, newCostSoFar),
                 ss.getRlBudgetCost(),
                 budgetViolated);
-        
-        System.out.println(String.format(
-            "[POST_OBSERVE_DONE] simTime=%.2f dag=%s task=%s",
-            CloudSim.clock(),
-            dagId,
-            taskId
-        ));
 
         // cleanup mapping
         cloudletToDagMap.remove(cloudletId);
@@ -401,13 +353,6 @@ public class DagRuntimeManager extends SimEntity {
                 if (child.getRemainingDeps() == 0) {
                     child.setReadyTimeMs(task.getFinishTimeMs());
                     child.setState(TaskRecord.TaskState.READY);
-                    System.out.println(String.format(
-                        "[CHILD_READY] simTime=%.2f parent=%s child=%s dag=%s",
-                        CloudSim.clock(),
-                        task.getTaskId(),
-                        child.getTaskId(),
-                        dag.getDagId()
-                    ));
                     CloudSim.send(getId(), this.getId(), 0, TASK_READY, child);
                 }
             }
