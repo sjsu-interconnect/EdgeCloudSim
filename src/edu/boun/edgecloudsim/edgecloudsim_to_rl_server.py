@@ -1,71 +1,64 @@
-import time
 from flask import Flask, request, jsonify
 from edgecloudsim_to_rl_bridge import bridge_state
 
 app = Flask(__name__)
 
-poll_interval = 0.01
 timeout_seconds = 120
 
-@app.route('/act', methods=['POST'])
+
+@app.route("/act", methods=["POST"])
 def get_action():
     data = request.get_json(force=True)
-    #get state from edgecloudsim
+
     state = data["state"]
+    action_mask = data.get("actionMask")
 
-    bridge_state.latest_act_state = state
-
-    #set first state for episode to send to env reset
-    if not bridge_state.episode_started and bridge_state.initial_state is None:
-        bridge_state.initial_state = state
-
-    #get action json from step
-    start = time.time()
-    while bridge_state.pending_action_json is None:
-        if time.time() - start > timeout_seconds:
-            return jsonify({"error": "Timed out waiting for action from env.step()"}), 500
-        time.sleep(poll_interval)
-    
-    action_json = bridge_state.pending_action_json
-    bridge_state.pending_action_json = None
+    try:
+        bridge_state.publish_act_request(state, action_mask)
+        action_json = bridge_state.wait_for_action(timeout_seconds)
+    except TimeoutError as e:
+        return jsonify({"error": str(e)}), 500
 
     task = state.get("task", {})
     print(
-        f"[ACT] dag={task.get('dagId', 'NA')} "
+        f"[ACT] req={bridge_state.act_request_id} "
+        f"dag={task.get('dagId', 'NA')} "
         f"task={task.get('taskId', 'NA')} "
-        f"tier={action_json['tier']} "
-        f"dc={action_json['datacenterId']} "
-        f"vm={action_json['vmId']}"
+        f"tier={action_json.get('tier', 'NA')} "
+        f"dc={action_json.get('datacenterId', 'NA')} "
+        f"vm={action_json.get('vmId', 'NA')}"
     )
 
     return jsonify(action_json)
 
-@app.route('/observe', methods=['POST'])
+
+@app.route("/observe", methods=["POST"])
 def send_result():
     data = request.get_json(force=True)
 
     reward = float(data["reward"])
+    next_state = data["next_state"]
     done = bool(data["done"])
     info = data.get("info", {})
 
-    bridge_state.pending_transition = {
-        "reward": reward,
-        "done": done,
-        "info": info
-    }
+    bridge_state.publish_transition(
+        reward=reward,
+        next_state=next_state,
+        done=done,
+        info=info,
+    )
 
     print(
-        f"[OBSERVE] reward={reward:.4f} "
+        f"[OBSERVE] req={bridge_state.observe_request_id} "
+        f"reward={reward:.4f} "
         f"latency={info.get('actualLatency', 0.0):.2f} "
         f"cost={info.get('actualCost', 0.0):.4f} "
         f"done={done} "
         f"budgetViolated={info.get('budgetViolated', False)}"
     )
 
-    return jsonify({
-        "status": "ok"
-    })
+    return jsonify({"status": "ok"})
 
 
-if __name__ == '__main__':
-    app.run(port=8000, debug=True, use_reloader=False)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000, debug=False, use_reloader=False)

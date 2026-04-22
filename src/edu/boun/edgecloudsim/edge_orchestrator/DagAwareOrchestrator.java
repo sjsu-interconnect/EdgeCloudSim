@@ -18,6 +18,7 @@ import java.util.List;
  */
 public class DagAwareOrchestrator extends EdgeOrchestrator {
     private final SchedulingPolicy schedulingPolicy;
+    private final java.util.Map<Long, PlacementDecision> decisionCache = new java.util.HashMap<>();
 
     public DagAwareOrchestrator(String policyName, String simScenario, SchedulingPolicy schedulingPolicy) {
         super(policyName, simScenario);
@@ -29,9 +30,19 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         // Initialization if needed
     }
 
+    // @Override
+    // public int getDeviceToOffload(Task task) {
+    //     PlacementDecision decision = getPolicyDecision(task);
+    //     if (decision.destTier == PlacementDecision.TIER_CLOUD) {
+    //         return SimSettings.CLOUD_DATACENTER_ID;
+    //     } else {
+    //         return SimSettings.GENERIC_EDGE_DEVICE_ID;
+    //     }
+    // }
     @Override
     public int getDeviceToOffload(Task task) {
-        PlacementDecision decision = getPolicyDecision(task);
+        PlacementDecision decision = getOrCreatePolicyDecision(task);
+
         if (decision.destTier == PlacementDecision.TIER_CLOUD) {
             return SimSettings.CLOUD_DATACENTER_ID;
         } else {
@@ -39,34 +50,103 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         }
     }
 
+    // @Override
+    // public Vm getVmToOffload(Task task, int deviceId) {
+    //     PlacementDecision decision = getPolicyDecision(task);
+
+    //     if (decision.destTier == PlacementDecision.TIER_CLOUD) {
+    //         // Retrieve cloud VM
+    //         List<CloudVM> vms = SimManager.getInstance().getCloudServerManager().getVmList(decision.destDatacenterId);
+    //         for (CloudVM vm : vms) {
+    //             if (vm.getId() == decision.destVmId) {
+    //                 return vm;
+    //             }
+    //         }
+    //         if (decision.destVmId >= 0 && decision.destVmId < vms.size()) { // backward-compatible index fallback
+    //             return vms.get(decision.destVmId);
+    //         }
+    //     } else {
+    //         // Retrieve edge VM
+    //         List<EdgeVM> vms = SimManager.getInstance().getEdgeServerManager().getVmList(decision.destDatacenterId);
+    //         for (EdgeVM vm : vms) {
+    //             if (vm.getId() == decision.destVmId) {
+    //                 return vm;
+    //             }
+    //         }
+    //         if (decision.destVmId >= 0 && decision.destVmId < vms.size()) { // backward-compatible index fallback
+    //             return vms.get(decision.destVmId);
+    //         }
+    //     }
+    //     return null;
+    // }
     @Override
     public Vm getVmToOffload(Task task, int deviceId) {
-        PlacementDecision decision = getPolicyDecision(task);
+        PlacementDecision decision = getOrCreatePolicyDecision(task);
 
-        if (decision.destTier == PlacementDecision.TIER_CLOUD) {
-            // Retrieve cloud VM
-            List<CloudVM> vms = SimManager.getInstance().getCloudServerManager().getVmList(decision.destDatacenterId);
-            for (CloudVM vm : vms) {
-                if (vm.getId() == decision.destVmId) {
+        try {
+            if (decision.destTier == PlacementDecision.TIER_CLOUD) {
+                List<CloudVM> vms = SimManager.getInstance()
+                        .getCloudServerManager()
+                        .getVmList(decision.destDatacenterId);
+
+                Vm selected = selectVmForDatacenter(vms, decision.destVmId);
+                return selected;
+            } else {
+                List<EdgeVM> vms = SimManager.getInstance()
+                        .getEdgeServerManager()
+                        .getVmList(decision.destDatacenterId);
+
+                Vm selected = selectVmForDatacenter(vms, decision.destVmId);
+                return selected;
+            }
+        } finally {
+            decisionCache.remove(task.getCloudletId());
+        }
+    }
+
+    private PlacementDecision getOrCreatePolicyDecision(Task task) {
+        long taskKey = task.getCloudletId();
+        PlacementDecision cached = decisionCache.get(taskKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        PlacementDecision fresh = getPolicyDecision(task);
+        decisionCache.put(taskKey, fresh);
+        return fresh;
+    }
+
+    private Vm selectVmForDatacenter(List<? extends Vm> vms, int requestedVmId) {
+        if (vms == null || vms.isEmpty()) {
+            return null;
+        }
+
+        // If a specific VM id was provided and exists, keep backward compatibility.
+        if (requestedVmId >= 0) {
+            for (Vm vm : vms) {
+                if (vm.getId() == requestedVmId) {
                     return vm;
                 }
             }
-            if (decision.destVmId >= 0 && decision.destVmId < vms.size()) { // backward-compatible index fallback
-                return vms.get(decision.destVmId);
-            }
-        } else {
-            // Retrieve edge VM
-            List<EdgeVM> vms = SimManager.getInstance().getEdgeServerManager().getVmList(decision.destDatacenterId);
-            for (EdgeVM vm : vms) {
-                if (vm.getId() == decision.destVmId) {
-                    return vm;
-                }
-            }
-            if (decision.destVmId >= 0 && decision.destVmId < vms.size()) { // backward-compatible index fallback
-                return vms.get(decision.destVmId);
+
+            if (requestedVmId < vms.size()) {
+                return vms.get(requestedVmId);
             }
         }
-        return null;
+
+        // Deterministic fallback: first available / least loaded VM.
+        Vm best = null;
+        int bestQueue = Integer.MAX_VALUE;
+
+        for (Vm vm : vms) {
+            int queueLen = vm.getCloudletScheduler().getCloudletExecList().size();
+            if (best == null || queueLen < bestQueue) {
+                best = vm;
+                bestQueue = queueLen;
+            }
+        }
+
+        return best;
     }
 
     private PlacementDecision getPolicyDecision(Task task) {

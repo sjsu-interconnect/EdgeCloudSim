@@ -60,10 +60,20 @@ public class RemoteRLPolicy implements SchedulingPolicy {
 
             String responseJson = postRequest(actUrl, gson.toJson(payload), timeoutMs);
             JsonObject decisionObj = gson.fromJson(responseJson, JsonObject.class);
+            // String tierName = decisionObj.get("tier").getAsString().toUpperCase();
+            // int tier = "CLOUD".equals(tierName) ? PlacementDecision.TIER_CLOUD : PlacementDecision.TIER_EDGE;
+            // int datacenterId = decisionObj.get("datacenterId").getAsInt();
+            // int vmId = decisionObj.get("vmId").getAsInt();
             String tierName = decisionObj.get("tier").getAsString().toUpperCase();
             int tier = "CLOUD".equals(tierName) ? PlacementDecision.TIER_CLOUD : PlacementDecision.TIER_EDGE;
             int datacenterId = decisionObj.get("datacenterId").getAsInt();
-            int vmId = decisionObj.get("vmId").getAsInt();
+
+            int vmId;
+            if (decisionObj.has("vmId") && !decisionObj.get("vmId").isJsonNull()) {
+                vmId = decisionObj.get("vmId").getAsInt();
+            } else {
+                vmId = selectDefaultVmId(state, tier, datacenterId);
+            }
 
             if (task.dagId != null && task.taskId != null) {
                 JsonObject actionObj = new JsonObject();
@@ -241,27 +251,64 @@ public class RemoteRLPolicy implements SchedulingPolicy {
         return root;
     }
 
+    // private static JsonArray buildActionMask(ClusterState state) {
+    //     int actions = 0;
+    //     if (state.vms != null) {
+    //         for (ClusterState.VMInfo[][] tier : state.vms) {
+    //             if (tier == null) {
+    //                 continue;
+    //             }
+    //             for (ClusterState.VMInfo[] dcVms : tier) {
+    //                 if (dcVms != null) {
+    //                     actions += dcVms.length;
+    //                 }
+    //             }
+    //         }
+    //     }
+    //     if (actions <= 0) {
+    //         actions = 2;
+    //     }
+    //     JsonArray arr = new JsonArray();
+    //     for (int i = 0; i < actions; i++) {
+    //         arr.add(1);
+    //     }
+    //     return arr;
+    // }
     private static JsonArray buildActionMask(ClusterState state) {
-        int actions = 0;
+        JsonArray arr = new JsonArray();
+
+        int edgeDcCount = 0;
+        int cloudDcCount = 0;
+
         if (state.vms != null) {
-            for (ClusterState.VMInfo[][] tier : state.vms) {
-                if (tier == null) {
-                    continue;
-                }
-                for (ClusterState.VMInfo[] dcVms : tier) {
-                    if (dcVms != null) {
-                        actions += dcVms.length;
-                    }
-                }
+            if (state.vms.length > PlacementDecision.TIER_EDGE && state.vms[PlacementDecision.TIER_EDGE] != null) {
+                edgeDcCount = state.vms[PlacementDecision.TIER_EDGE].length;
+            }
+            if (state.vms.length > PlacementDecision.TIER_CLOUD && state.vms[PlacementDecision.TIER_CLOUD] != null) {
+                cloudDcCount = state.vms[PlacementDecision.TIER_CLOUD].length;
             }
         }
-        if (actions <= 0) {
-            actions = 2;
+
+        // Edge actions first: one action per edge datacenter
+        for (int dc = 0; dc < edgeDcCount; dc++) {
+            ClusterState.VMInfo[] dcVms = state.vms[PlacementDecision.TIER_EDGE][dc];
+            boolean feasible = dcVms != null && dcVms.length > 0;
+            arr.add(feasible ? 1 : 0);
         }
-        JsonArray arr = new JsonArray();
-        for (int i = 0; i < actions; i++) {
-            arr.add(1);
+
+        // Cloud actions next: one action per cloud datacenter
+        for (int dc = 0; dc < cloudDcCount; dc++) {
+            ClusterState.VMInfo[] dcVms = state.vms[PlacementDecision.TIER_CLOUD][dc];
+            boolean feasible = dcVms != null && dcVms.length > 0;
+            arr.add(feasible ? 1 : 0);
         }
+
+        // Safety fallback if cluster info is missing
+        if (arr.size() == 0) {
+            arr.add(1); // edge dc 0
+            arr.add(1); // cloud dc 0
+        }
+
         return arr;
     }
 
@@ -342,5 +389,34 @@ public class RemoteRLPolicy implements SchedulingPolicy {
             }
             return response.toString();
         }
+    }
+
+    private static int selectDefaultVmId(ClusterState state, int tier, int datacenterId) {
+        if (state == null || state.vms == null) {
+            return 0;
+        }
+        if (tier < 0 || tier >= state.vms.length || state.vms[tier] == null) {
+            return 0;
+        }
+        if (datacenterId < 0 || datacenterId >= state.vms[tier].length) {
+            return 0;
+        }
+
+        ClusterState.VMInfo[] dcVms = state.vms[tier][datacenterId];
+        if (dcVms == null || dcVms.length == 0) {
+            return 0;
+        }
+
+        ClusterState.VMInfo best = null;
+        for (ClusterState.VMInfo vm : dcVms) {
+            if (vm == null) {
+                continue;
+            }
+            if (best == null || vm.queuedTaskCount < best.queuedTaskCount) {
+                best = vm;
+            }
+        }
+
+        return best != null ? best.vmId : dcVms[0].vmId;
     }
 }

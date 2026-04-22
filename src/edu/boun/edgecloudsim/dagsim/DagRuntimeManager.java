@@ -296,13 +296,25 @@ public class DagRuntimeManager extends SimEntity {
 
         processTaskFinished(task);
 
-        boolean done = !activeDags.containsKey(dagId);
-        TaskContext nextTaskCtx = buildTaskContextForNextState(dag, done ? null : findAnyPendingTask(dag), task);
+        boolean done = activeDags.isEmpty();
+
+        // boolean done = !activeDags.containsKey(dagId);
+        DagRecord nextDag = done ? null : findAnyActiveDagWithPendingTask();
+        TaskRecord nextPendingTask = done ? null : findAnyPendingTaskAcrossActiveDags();
+        
+        // TaskContext nextTaskCtx = buildTaskContextForNextState(dag, done ? null : findAnyPendingTask(dag), task);
+        TaskContext nextTaskCtx = buildTaskContextForNextState(nextDag, nextPendingTask, task);
         ClusterState nextClusterState = DagAwareOrchestrator.buildClusterStateSnapshot();
+        double nextCostSoFar = 0.0;
+        if (!done && nextDag != null) {
+            nextCostSoFar = dagCostSoFar.getOrDefault(nextDag.getDagId(), 0.0);
+        }
+
         JsonObject nextState = RemoteRLPolicy.buildStateJson(
                 nextTaskCtx,
                 nextClusterState,
-                dagCostSoFar.getOrDefault(dagId, newCostSoFar),
+                nextCostSoFar,
+                // dagCostSoFar.getOrDefault(dagId, newCostSoFar),
                 ss.getRlBudgetCost(),
                 getActiveDagsCount());
 
@@ -315,7 +327,8 @@ public class DagRuntimeManager extends SimEntity {
                 done,
                 actualLatency,
                 actualCost,
-                dagCostSoFar.getOrDefault(dagId, newCostSoFar),
+                nextCostSoFar,
+                // dagCostSoFar.getOrDefault(dagId, newCostSoFar),
                 ss.getRlBudgetCost(),
                 budgetViolated);
 
@@ -399,10 +412,41 @@ public class DagRuntimeManager extends SimEntity {
         return null;
     }
 
+    private DagRecord findAnyActiveDagWithPendingTask() {
+        for (DagRecord dag : activeDags.values()) {
+            TaskRecord pending = findAnyPendingTask(dag);
+            if (pending != null) {
+                return dag;
+            }
+        }
+        return activeDags.values().stream().findFirst().orElse(null);
+    }
+
+    private TaskRecord findAnyPendingTaskAcrossActiveDags() {
+        for (DagRecord dag : activeDags.values()) {
+            TaskRecord pending = findAnyPendingTask(dag);
+            if (pending != null) {
+                return pending;
+            }
+        }
+        return null;
+    }
+
     private TaskContext buildTaskContextForNextState(DagRecord dag, TaskRecord candidate, TaskRecord fallbackTask) {
         TaskRecord base = (candidate != null) ? candidate : fallbackTask;
         TaskContext ctx = new TaskContext();
-        ctx.dagId = (dag != null) ? dag.getDagId() : (fallbackTask != null ? findDagIdForTask(fallbackTask) : "NA");
+        // ctx.dagId = (dag != null) ? dag.getDagId() : (fallbackTask != null ? findDagIdForTask(fallbackTask) : "NA");
+        String resolvedDagId;
+        if (dag != null) {
+            resolvedDagId = dag.getDagId();
+        } else if (base != null) {
+            resolvedDagId = findDagIdForTask(base);
+        } else if (fallbackTask != null) {
+            resolvedDagId = findDagIdForTask(fallbackTask);
+        } else {
+            resolvedDagId = "NA";
+        }
+        ctx.dagId = resolvedDagId;
         ctx.taskId = (base != null) ? base.getTaskId() : "NA";
         ctx.taskType = (base != null) ? base.getTaskType() : "NA";
 
