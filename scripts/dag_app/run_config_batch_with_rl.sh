@@ -65,6 +65,9 @@ start_rl_server() {
   export RL_CHECKPOINT_FILENAME="ppo_${RUN_TAG}.pt"
   export RL_REWARD_PLOT_PATH="${CONFIG_ROOT}/reward_curve_${RUN_TAG}.png"
   export RL_REWARD_CSV_PATH="${CONFIG_ROOT}/rewards_${RUN_TAG}.csv"
+  # Start policy learning only after sustained high utilization pressure.
+  export RL_TRAIN_START_UTIL_THRESHOLD="${RL_TRAIN_START_UTIL_THRESHOLD:-0.80}"
+  export RL_TRAIN_START_MIN_STRAINED_STEPS="${RL_TRAIN_START_MIN_STRAINED_STEPS:-64}"
 
   if [[ "${use_conda}" -eq 1 ]]; then
     (
