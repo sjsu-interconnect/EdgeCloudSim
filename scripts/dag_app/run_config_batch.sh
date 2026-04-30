@@ -4,6 +4,13 @@ set -euo pipefail
 # Run one config for N iterations in a single config folder,
 # parse each log asynchronously, then generate aggregate summary.
 #
+# This script does NOT start the RL server. For orchestrator_policies=REMOTE_RL scenarios,
+# start the PPO service separately (see start_rl_server.sh in this directory). The utilization
+# guard is enforced inside the RL process via RL_TRAIN_START_UTIL_THRESHOLD and
+# RL_TRAIN_START_MIN_STRAINED_STEPS. Current defaults in rl_service are threshold 0.60 and
+# min strained steps 1 (unlock learning on first observed >=60% utilization pressure). Match
+# rl_service_url in your *.properties to the server host:port (often http://127.0.0.1:8009).
+#
 # Usage:
 # ./run_config_batch.sh <config_name> <edge_devices_file> <applications_file> [num_runs]
 # Example:
@@ -16,6 +23,7 @@ CONFIG_NAME="${1:-DAG_APP}"
 EDGE_DEVICES_FILE="${2:-edge_ai_devices.xml}"
 APPLICATIONS_FILE="${3:-applications_dag.xml}"
 NUM_RUNS="${4:-10}"
+RL_EXPORT_URL="${RL_EXPORT_URL:-http://127.0.0.1:8009/export_rewards}"
 
 if ! [[ "${NUM_RUNS}" =~ ^[0-9]+$ ]] || [[ "${NUM_RUNS}" -lt 1 ]]; then
   echo "NUM_RUNS must be a positive integer"
@@ -41,6 +49,8 @@ for i in $(seq 1 "${NUM_RUNS}"); do
 
   echo "[${RUN_TAG}] starting simulation"
   "${SCRIPT_DIR}/runner.sh" "${BATCH_ROOT}" "${CONFIG_NAME}" "${EDGE_DEVICES_FILE}" "${APPLICATIONS_FILE}" "${i}"
+  # Persist reward CSV/plot in manual-RL flow if the server is reachable.
+  curl -s -X POST "${RL_EXPORT_URL}" >/dev/null 2>&1 || true
 
   LOG_PATH="${CONFIG_ROOT}/ite${i}.log"
   METRIC_JSON="${CONFIG_ROOT}/metrics_ite${i}.json"
