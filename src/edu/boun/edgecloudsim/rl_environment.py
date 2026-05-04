@@ -30,7 +30,10 @@ class SchedulingEnvironment(gym.Env):
     def reset(self, *, seed=None, options=None): #edgecloudsim state comes in here
         super().reset(seed=seed)
 
-        self.current_state = bridge_state.wait_for_initial_state(self.timeout_seconds)
+        try:
+            self.current_state = bridge_state.wait_for_initial_state(self.timeout_seconds)
+        except TimeoutError:
+            raise RuntimeError("[ENV] Timed out waiting for initial state — simulation may have ended")
         self.current_reward = 0.0
         self.current_done = False
         self.current_info = {}
@@ -58,8 +61,19 @@ class SchedulingEnvironment(gym.Env):
         # submit chosen action so /act can return it to EdgeCloudSim
         bridge_state.submit_action(action_json)
 
-        #wait for /observe to publish reward, next_state, done
-        transition = bridge_state.wait_for_transition(self.timeout_seconds)
+        # wait for /observe to publish reward, next_state, done
+        try:
+            transition = bridge_state.wait_for_transition(self.timeout_seconds)
+        except TimeoutError:
+            print("[ENV] Timeout waiting for /observe — treating episode as done")
+            obs = self._get_obs(self.current_state)
+            action_mask = bridge_state.get_current_action_mask()
+            if action_mask is None:
+                action_mask = self._get_action_mask(self.current_state)
+            return obs, 0.0, True, False, {
+                "action_mask": np.asarray(action_mask, dtype=bool),
+                "raw_state": self.current_state,
+            }
 
         reward = float(transition["reward"])
         next_state = transition["next_state"]
@@ -71,9 +85,22 @@ class SchedulingEnvironment(gym.Env):
         self.current_info = info
 
         if not done:
-            self.current_state = bridge_state.wait_for_next_act_request(
-                request_id_before, self.timeout_seconds
-            )
+            try:
+                self.current_state = bridge_state.wait_for_next_act_request(
+                    request_id_before, self.timeout_seconds
+                )
+            except TimeoutError:
+                print("[ENV] Timeout waiting for next /act — treating episode as done")
+                self.current_state = next_state
+                obs = self._get_obs(self.current_state)
+                action_mask = bridge_state.get_current_action_mask()
+                if action_mask is None:
+                    action_mask = self._get_action_mask(self.current_state)
+                return obs, reward, True, False, {
+                    **self._get_info(),
+                    "action_mask": np.asarray(action_mask, dtype=bool),
+                    "raw_state": self.current_state,
+                }
         else:
             self.current_state = next_state
 

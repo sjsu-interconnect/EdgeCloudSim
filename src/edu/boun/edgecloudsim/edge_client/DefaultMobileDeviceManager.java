@@ -111,10 +111,14 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 					schedule(getId(), WanDelay, RESPONSE_RECEIVED_BY_MOBILE_DEVICE, task);
 				} else {
 					SimLogger.getInstance().failedDueToMobility(task.getCloudletId(), CloudSim.clock());
+					if (DagRuntimeManager.getInstance() != null)
+						DagRuntimeManager.getInstance().onTaskFailed(task);
 				}
 			} else {
 				SimLogger.getInstance().failedDueToBandwidth(task.getCloudletId(), CloudSim.clock(),
 						NETWORK_DELAY_TYPES.WAN_DELAY);
+				if (DagRuntimeManager.getInstance() != null)
+					DagRuntimeManager.getInstance().onTaskFailed(task);
 			}
 		} else {
 			// Task completed on edge server - calculate WLAN download delay for result
@@ -131,10 +135,14 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 					schedule(getId(), WlanDelay, RESPONSE_RECEIVED_BY_MOBILE_DEVICE, task);
 				} else {
 					SimLogger.getInstance().failedDueToMobility(task.getCloudletId(), CloudSim.clock());
+					if (DagRuntimeManager.getInstance() != null)
+						DagRuntimeManager.getInstance().onTaskFailed(task);
 				}
 			} else {
 				SimLogger.getInstance().failedDueToBandwidth(task.getCloudletId(), CloudSim.clock(),
 						NETWORK_DELAY_TYPES.WLAN_DELAY);
+				if (DagRuntimeManager.getInstance() != null)
+					DagRuntimeManager.getInstance().onTaskFailed(task);
 			}
 		}
 	}
@@ -316,6 +324,8 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 						CloudSim.clock(),
 						SimSettings.VM_TYPES.CLOUD_VM.ordinal(),
 						NETWORK_DELAY_TYPES.WAN_DELAY);
+				if (DagRuntimeManager.getInstance() != null)
+					DagRuntimeManager.getInstance().onTaskFailed(task);
 			}
 		} else if (nextHopId == SimSettings.GENERIC_EDGE_DEVICE_ID) {
 			// Task assigned to edge server - calculate WLAN upload delay
@@ -334,6 +344,8 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 						CloudSim.clock(),
 						SimSettings.VM_TYPES.EDGE_VM.ordinal(),
 						NETWORK_DELAY_TYPES.WLAN_DELAY);
+				if (DagRuntimeManager.getInstance() != null)
+					DagRuntimeManager.getInstance().onTaskFailed(task);
 			}
 		} else {
 			// Unknown orchestrator decision - terminate simulation
@@ -389,6 +401,8 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 			// SimLogger.printLine("Task #" + task.getCloudletId() + " cannot assign to any
 			// VM");
 			SimLogger.getInstance().rejectedDueToVMCapacity(task.getCloudletId(), CloudSim.clock(), vmType);
+			if (DagRuntimeManager.getInstance() != null)
+				DagRuntimeManager.getInstance().onTaskFailed(task);
 		}
 	}
 

@@ -53,6 +53,9 @@ public class DagRuntimeManager extends SimEntity {
     private int dagsArrivedCount = 0; // DAG_SUBMIT events actually processed
     private final Set<String> dagsWithScheduledTasks = new HashSet<>(); // DAGs that reached scheduling path
 
+    private boolean rlDecisionInFlight = false;
+    private final java.util.Queue<TaskRecord> pendingReadyTasks = new java.util.LinkedList<>();
+
     public DagRuntimeManager(String name, List<DagRecord> dags) {
         super(name);
         this.allDags = dags;
@@ -138,8 +141,14 @@ public class DagRuntimeManager extends SimEntity {
             }
         }
     }
-
     private void processTaskReady(TaskRecord task) {
+        if (task == null) {
+            if (!rlDecisionInFlight && !pendingReadyTasks.isEmpty()) {
+                TaskRecord nextTask = pendingReadyTasks.poll();
+                processTaskReady(nextTask);
+            }
+            return;
+        }
         String dagId = findDagIdForTask(task);
         DagRecord dag = activeDags.get(dagId);
 
@@ -148,71 +157,126 @@ public class DagRuntimeManager extends SimEntity {
             return;
         }
 
+        // If RL is busy → queue task
+        if (rlDecisionInFlight) {
+            boolean wasEmpty = pendingReadyTasks.isEmpty();
+            pendingReadyTasks.add(task);
+
+            // If queue was empty, ensure a future event will retry
+            CloudSim.send(getId(), this.getId(), 0.01, TASK_READY, null);
+            return;
+        }
+
+        rlDecisionInFlight = true;
+
         double readyTime = CloudSim.clock();
         task.setState(TaskRecord.TaskState.SCHEDULED);
         task.setScheduledTimeMs(readyTime * 1000.0);
 
-        // Convert TaskRecord to TaskProperty and send to SimManager so it follows
-        // normal submission path
         SimSettings ss = SimSettings.getInstance();
 
-        // Compute task length in MI using cloud VM MIPS as baseline (so MI is
-        // independent of target)
         long lengthMi = (long) (task.getDurationMs() * ss.getMipsForCloudVM() / 1000.0);
-        if (lengthMi <= 0)
-            lengthMi = 1;
-
-        // Projected execution times on edge and cloud (seconds)
-        double execSecCloud = lengthMi / (double) ss.getMipsForCloudVM();
-        double execSecEdge = lengthMi / (double) ss.getMipsForMobileVM();
+        if (lengthMi <= 0) lengthMi = 1;
 
         int taskTypeIdx = ss.getTaskTypeIndex(task.getTaskType());
-        if (taskTypeIdx == -1) {
-            System.err.println("WARNING: Task type " + task.getTaskType()
-                    + " not found in applications XML. Using default index 0.");
-            taskTypeIdx = 0;
-        }
+        if (taskTypeIdx == -1) taskTypeIdx = 0;
 
-        // Get realistic input/output sizes from applications XML (KB to Bytes)
         double[] appProps = ss.getTaskLookUpTable()[taskTypeIdx];
         long inputBytes = (long) (appProps[5] * 1024.0);
         long outputBytes = (long) (appProps[6] * 1024.0);
 
-        // Fallback for safety
-        if (inputBytes <= 0)
-            inputBytes = 1024;
-        if (outputBytes <= 0)
-            outputBytes = 1024;
+        if (inputBytes <= 0) inputBytes = 1024;
+        if (outputBytes <= 0) outputBytes = 1024;
 
-        int pes = 1;
+        int numDevices = ss.getMaxNumOfMobileDev();
+        int mobileDeviceId = Math.abs(task.getTaskId().hashCode()) % numDevices;
 
-        // Map DAG task to a real mobile device (round-robin across 0 to numDevices-1)
-        // This ensures the task is submitted with a valid device ID for mobility lookup
-        int numDevices = SimSettings.getInstance().getMaxNumOfMobileDev();
-        int taskHashCode = task.getTaskId().hashCode();
-        int mobileDeviceId = Math.abs(taskHashCode) % numDevices;
+        TaskProperty tp = new TaskProperty(
+            readyTime, mobileDeviceId, taskTypeIdx, 1,
+            lengthMi, inputBytes, outputBytes,
+            dagId, task.getTaskId()
+        );
 
-        // Create TaskProperty with estimated sizes and MI, attach DAG identifiers
-        TaskProperty tp = new TaskProperty(readyTime, mobileDeviceId, taskTypeIdx, pes, lengthMi, inputBytes,
-                outputBytes, dagId, task.getTaskId());
-
-        // Register this task in our DAG task registry so we can track it when it
-        // completes
-        dagTaskRegistry.computeIfAbsent(dagId, k -> new HashMap<>())
-                .put(task.getTaskId(), new long[] { lengthMi, mobileDeviceId, (long) (readyTime * 1000.0) });
-
-        // Send as CREATE_TASK event to SimManager (CREATE_TASK tag = 0)
-
-        // Log scheduling estimate
-        String appName = (dag != null) ? dag.getApplicationName() : "Unknown_App";
-        System.out.println(String.format(
-                "[%s] [%.2f] Task ready: %s of DAG %s — lengthMI=%d, execEdge=%.3fs, execCloud=%.3fs, in=%dB out=%dB",
-                appName, CloudSim.clock(), task.getTaskId(), dagId, lengthMi, execSecEdge, execSecCloud, inputBytes,
-                outputBytes));
-
+        // Send to SimManager AFTER RL decision is triggered via /act
         CloudSim.send(getId(), SimManager.getInstance().getId(), 0.0, 0, tp);
+
         dagsWithScheduledTasks.add(dagId);
     }
+
+    // private void processTaskReady(TaskRecord task) {
+    //     String dagId = findDagIdForTask(task);
+    //     DagRecord dag = activeDags.get(dagId);
+
+    //     if (dag == null) {
+    //         System.err.println("ERROR: DAG not found for task " + task.getTaskId());
+    //         return;
+    //     }
+
+    //     double readyTime = CloudSim.clock();
+    //     task.setState(TaskRecord.TaskState.SCHEDULED);
+    //     task.setScheduledTimeMs(readyTime * 1000.0);
+
+    //     // Convert TaskRecord to TaskProperty and send to SimManager so it follows
+    //     // normal submission path
+    //     SimSettings ss = SimSettings.getInstance();
+
+    //     // Compute task length in MI using cloud VM MIPS as baseline (so MI is
+    //     // independent of target)
+    //     long lengthMi = (long) (task.getDurationMs() * ss.getMipsForCloudVM() / 1000.0);
+    //     if (lengthMi <= 0)
+    //         lengthMi = 1;
+
+    //     // Projected execution times on edge and cloud (seconds)
+    //     double execSecCloud = lengthMi / (double) ss.getMipsForCloudVM();
+    //     double execSecEdge = lengthMi / (double) ss.getMipsForMobileVM();
+
+    //     int taskTypeIdx = ss.getTaskTypeIndex(task.getTaskType());
+    //     if (taskTypeIdx == -1) {
+    //         System.err.println("WARNING: Task type " + task.getTaskType()
+    //                 + " not found in applications XML. Using default index 0.");
+    //         taskTypeIdx = 0;
+    //     }
+
+    //     // Get realistic input/output sizes from applications XML (KB to Bytes)
+    //     double[] appProps = ss.getTaskLookUpTable()[taskTypeIdx];
+    //     long inputBytes = (long) (appProps[5] * 1024.0);
+    //     long outputBytes = (long) (appProps[6] * 1024.0);
+
+    //     // Fallback for safety
+    //     if (inputBytes <= 0)
+    //         inputBytes = 1024;
+    //     if (outputBytes <= 0)
+    //         outputBytes = 1024;
+
+    //     int pes = 1;
+
+    //     // Map DAG task to a real mobile device (round-robin across 0 to numDevices-1)
+    //     // This ensures the task is submitted with a valid device ID for mobility lookup
+    //     int numDevices = SimSettings.getInstance().getMaxNumOfMobileDev();
+    //     int taskHashCode = task.getTaskId().hashCode();
+    //     int mobileDeviceId = Math.abs(taskHashCode) % numDevices;
+
+    //     // Create TaskProperty with estimated sizes and MI, attach DAG identifiers
+    //     TaskProperty tp = new TaskProperty(readyTime, mobileDeviceId, taskTypeIdx, pes, lengthMi, inputBytes,
+    //             outputBytes, dagId, task.getTaskId());
+
+    //     // Register this task in our DAG task registry so we can track it when it
+    //     // completes
+    //     dagTaskRegistry.computeIfAbsent(dagId, k -> new HashMap<>())
+    //             .put(task.getTaskId(), new long[] { lengthMi, mobileDeviceId, (long) (readyTime * 1000.0) });
+
+    //     // Send as CREATE_TASK event to SimManager (CREATE_TASK tag = 0)
+
+    //     // Log scheduling estimate
+    //     String appName = (dag != null) ? dag.getApplicationName() : "Unknown_App";
+    //     System.out.println(String.format(
+    //             "[%s] [%.2f] Task ready: %s of DAG %s — lengthMI=%d, execEdge=%.3fs, execCloud=%.3fs, in=%dB out=%dB",
+    //             appName, CloudSim.clock(), task.getTaskId(), dagId, lengthMi, execSecEdge, execSecCloud, inputBytes,
+    //             outputBytes));
+
+    //     CloudSim.send(getId(), SimManager.getInstance().getId(), 0.0, 0, tp);
+    //     dagsWithScheduledTasks.add(dagId);
+    // }
 
     /**
      * Register mapping from CloudSim cloudlet id to DAG identifiers so we can
@@ -331,10 +395,90 @@ public class DagRuntimeManager extends SimEntity {
                 // dagCostSoFar.getOrDefault(dagId, newCostSoFar),
                 ss.getRlBudgetCost(),
                 budgetViolated);
+        
+        rlDecisionInFlight = false;
 
+        if (!pendingReadyTasks.isEmpty()) {
+            TaskRecord nextTask = pendingReadyTasks.poll();
+            processTaskReady(nextTask);
+        }
         // cleanup mapping
         cloudletToDagMap.remove(cloudletId);
     }
+
+    /**
+     * Called by SimManager when a task fails (e.g. WLAN/mobility failure).
+     * Without this, rlDecisionInFlight stays true forever and the simulation hangs.
+     */
+    public void onTaskFailed(Task cloudlet) {
+        long cloudletId = cloudlet.getCloudletId();
+        String[] ids = cloudletToDagMap.remove(cloudletId);
+        if (ids == null) return; // not a DAG task
+ 
+        String dagId = ids[0];
+        String taskId = ids[1];
+ 
+        DagRecord dag = activeDags.get(dagId);
+        if (dag == null) {
+            for (DagRecord d : allDags) {
+                if (d.getDagId().equals(dagId)) { dag = d; break; }
+            }
+        }
+        if (dag != null) {
+            TaskRecord task = dag.getTask(taskId);
+            if (task != null) {
+                task.setState(TaskRecord.TaskState.DONE);
+                dag.incrementCompletedTasks();
+                System.out.println(String.format(
+                    "[%s] [%.2f] Task FAILED (network): %s of %s (%d/%d)",
+                    dag.getApplicationName(), CloudSim.clock(),
+                    taskId, dagId,
+                    dag.getCompletedTasks(), dag.getTotalTasks()));
+ 
+                // If this failure completes the DAG (all tasks done/failed)
+                if (dag.isComplete()) {
+                    dag.setState(DagRecord.DagState.COMPLETE);
+                    dag.setCompleteTimeMs(CloudSim.clock() * 1000.0);
+                    activeDags.remove(dagId);
+                    dagCostSoFar.remove(dagId);
+                }
+            }
+        }
+ 
+        // Send penalty observation to Python if an RL trace was stored for this task
+        RemoteRLPolicy.DecisionTrace trace = RemoteRLPolicy.consumeTrace(dagId, taskId);
+        if (trace != null) {
+            SimSettings ss = SimSettings.getInstance();
+            boolean done = activeDags.isEmpty() && (dagsArrivedCount >= allDags.size());
+            DagRecord nextDag = done ? null : findAnyActiveDagWithPendingTask();
+            TaskRecord nextPending = done ? null : findAnyPendingTaskAcrossActiveDags();
+            TaskContext nextCtx = buildTaskContextForNextState(nextDag, nextPending, null);
+            ClusterState nextCluster = DagAwareOrchestrator.buildClusterStateSnapshot();
+            double nextCost = (!done && nextDag != null)
+                ? dagCostSoFar.getOrDefault(nextDag.getDagId(), 0.0) : 0.0;
+            JsonObject nextState = RemoteRLPolicy.buildStateJson(
+                nextCtx, nextCluster, nextCost, ss.getRlBudgetCost(), getActiveDagsCount());
+ 
+            // Apply a large latency penalty for the failed task
+            double penalty = ss.getRlBudgetPenalty();
+            RemoteRLPolicy.postObservation(
+                ss.getRlServiceUrl(), ss.getRlHttpTimeoutMs(),
+                trace, nextState,
+                penalty,   // reward: penalty for failure
+                done,
+                0.0, 0.0, // latency/cost unknown for failed task
+                nextCost, ss.getRlBudgetCost(),
+                false);
+        }
+ 
+        // Unblock the scheduling pipeline
+        rlDecisionInFlight = false;
+        if (!pendingReadyTasks.isEmpty()) {
+            TaskRecord nextTask = pendingReadyTasks.poll();
+            processTaskReady(nextTask);
+        }
+    }
+
 
     private void processTaskFinished(TaskRecord task) {
         String dagId = findDagIdForTask(task);

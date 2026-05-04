@@ -93,7 +93,31 @@ public class RemoteRLPolicy implements SchedulingPolicy {
 
         } catch (Exception e) {
             System.err.println("RemoteRLPolicy failed: " + e.getMessage());
-            return new EdgeFirstFeasiblePolicy().decide(task, state);
+            PlacementDecision fallback = new EdgeFirstFeasiblePolicy().decide(task, state);
+
+            // Store a fallback trace so onTaskCloudletFinished can still call postObservation.
+            // Without this the observation is silently skipped and Python blocks forever.
+            if (task.dagId != null && task.taskId != null) {
+                double budget = SimSettings.getInstance().getRlBudgetCost();
+                DagRuntimeManager drm = DagRuntimeManager.getInstance();
+                double costSoFar = (drm != null) ? drm.getDagCostSoFar(task.dagId) : 0.0;
+                int activeDagCount = (drm != null) ? drm.getActiveDagsCount() : 0;
+                JsonObject stateJson = buildStateJson(task, state, costSoFar, budget, activeDagCount);
+
+                String tierName = (fallback.destTier == PlacementDecision.TIER_CLOUD) ? "CLOUD" : "EDGE";
+                JsonObject actionObj = new JsonObject();
+                actionObj.addProperty("tier", tierName);
+                actionObj.addProperty("datacenterId", fallback.destDatacenterId);
+                actionObj.addProperty("vmId", fallback.destVmId);
+                actionObj.addProperty("actionIndex", -1); // marker: fallback decision
+
+                DecisionTrace trace = new DecisionTrace();
+                trace.state = stateJson;
+                trace.action = actionObj;
+                TRACE_BY_TASK.put(key(task.dagId, task.taskId), trace);
+            }
+
+            return fallback;
         }
     }
 
