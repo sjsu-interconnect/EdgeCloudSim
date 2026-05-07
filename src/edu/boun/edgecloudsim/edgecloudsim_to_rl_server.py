@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from edgecloudsim_to_rl_bridge import bridge_state
+from redis_bridge import redis_bridge
 
 app = Flask(__name__)
 
@@ -13,15 +13,16 @@ def get_action():
     state = data["state"]
     action_mask = data.get("actionMask")
 
+    request_id = redis_bridge.push_act_request(state, action_mask)
+
     try:
-        bridge_state.publish_act_request(state, action_mask)
-        action_json = bridge_state.wait_for_action(timeout_seconds)
+        action_json = redis_bridge.pop_action(timeout_seconds)
     except TimeoutError as e:
         return jsonify({"error": str(e)}), 500
 
     task = state.get("task", {})
     print(
-        f"[ACT] req={bridge_state.act_request_id} "
+        f"[ACT] req={request_id} "
         f"dag={task.get('dagId', 'NA')} "
         f"task={task.get('taskId', 'NA')} "
         f"tier={action_json.get('tier', 'NA')} "
@@ -41,15 +42,11 @@ def send_result():
     done = bool(data["done"])
     info = data.get("info", {})
 
-    bridge_state.publish_transition(
-        reward=reward,
-        next_state=next_state,
-        done=done,
-        info=info,
-    )
+    redis_bridge.push_observe(reward, next_state, done, info)
+    request_id = redis_bridge.get_request_id()
 
     print(
-        f"[OBSERVE] req={bridge_state.observe_request_id} "
+        f"[OBSERVE] req={request_id} "
         f"reward={reward:.4f} "
         f"latency={info.get('actualLatency', 0.0):.2f} "
         f"cost={info.get('actualCost', 0.0):.4f} "
@@ -61,4 +58,8 @@ def send_result():
 
 
 if __name__ == "__main__":
+    redis_bridge.flush()
+    print("[Server] Flask server starting on port 8000")
+    print("[Server] Waiting for training.py and EdgeCloudSim...")
+
     app.run(host="0.0.0.0", port=8000, debug=False, use_reloader=False)

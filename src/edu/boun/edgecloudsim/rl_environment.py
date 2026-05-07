@@ -1,7 +1,7 @@
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-from edgecloudsim_to_rl_bridge import bridge_state
+from redis_bridge import redis_bridge
 
 class SchedulingEnvironment(gym.Env):
     def __init__(self, num_edge_dc=8, num_cloud_dc=1, timeout_seconds=120):
@@ -21,28 +21,28 @@ class SchedulingEnvironment(gym.Env):
         self.observation_space = spaces.Box(low = 0, high = 1, shape=(OBSERVATION_SIZE, ), dtype=np.float32)
 
         self.current_state = None
+        self.current_action_mask = None
         self.current_reward = 0.0
         self.current_done = False
         self.current_info = {}
-        
         self.timeout_seconds = timeout_seconds
 
-    def reset(self, *, seed=None, options=None): #edgecloudsim state comes in here
+    def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
 
         try:
-            self.current_state = bridge_state.wait_for_initial_state(self.timeout_seconds)
+            payload = redis_bridge.pop_act_request(self.timeout_seconds)
         except TimeoutError:
             raise RuntimeError("[ENV] Timed out waiting for initial state — simulation may have ended")
+        
+        self.current_state = payload["state"]
+        self.current_action_mask = payload.get("action_mask")
         self.current_reward = 0.0
         self.current_done = False
         self.current_info = {}
 
         obs = self._get_obs(self.current_state)
-
-        action_mask = bridge_state.get_current_action_mask()
-        if action_mask is None:
-            action_mask = self._get_action_mask(self.current_state)
+        action_mask = self._resolve_action_mask()
 
         info = {
             "action_mask": np.asarray(action_mask, dtype=bool),
@@ -53,25 +53,22 @@ class SchedulingEnvironment(gym.Env):
     def step(self, action):
         if self.current_state is None:
             raise RuntimeError("step() called before reset() or without a current state")
-        
-        request_id_before = bridge_state.get_act_request_id()
 
         action_json = self.action_to_json(action, self.current_state)
 
         # submit chosen action so /act can return it to EdgeCloudSim
-        bridge_state.submit_action(action_json)
+        redis_bridge.push_action(action_json)
 
         # wait for /observe to publish reward, next_state, done
         try:
-            transition = bridge_state.wait_for_transition(self.timeout_seconds)
+            transition = redis_bridge.pop_observe(self.timeout_seconds)
         except TimeoutError:
             print("[ENV] Timeout waiting for /observe — treating episode as done")
+
             obs = self._get_obs(self.current_state)
-            action_mask = bridge_state.get_current_action_mask()
-            if action_mask is None:
-                action_mask = self._get_action_mask(self.current_state)
+
             return obs, 0.0, True, False, {
-                "action_mask": np.asarray(action_mask, dtype=bool),
+                "action_mask": np.asarray(self._resolve_action_mask(), dtype=bool),
                 "raw_state": self.current_state,
             }
 
@@ -80,41 +77,37 @@ class SchedulingEnvironment(gym.Env):
         done = bool(transition["done"])
         info = transition.get("info", {})
         
-        self.current_reward = float(reward)
-        self.current_done = bool(done)
+        self.current_reward = reward
+        self.current_done = done
         self.current_info = info
 
         if not done:
             try:
-                self.current_state = bridge_state.wait_for_next_act_request(
-                    request_id_before, self.timeout_seconds
-                )
+                next_payload = redis_bridge.pop_act_request(self.timeout_seconds)
+                self.current_state = next_payload["state"]
+                self.current_action_mask = next_payload.get("action_mask")
             except TimeoutError:
                 print("[ENV] Timeout waiting for next /act — treating episode as done")
                 self.current_state = next_state
+                self.current_action_mask = None
                 obs = self._get_obs(self.current_state)
-                action_mask = bridge_state.get_current_action_mask()
-                if action_mask is None:
-                    action_mask = self._get_action_mask(self.current_state)
+
                 return obs, reward, True, False, {
                     **self._get_info(),
-                    "action_mask": np.asarray(action_mask, dtype=bool),
+                    "action_mask": np.asarray(self._resolve_action_mask(), dtype=bool),
                     "raw_state": self.current_state,
                 }
         else:
             self.current_state = next_state
+            self.current_action_mask = None
 
         obs = self._get_obs(self.current_state)
         terminated = done
         truncated = False
-        
-        action_mask = bridge_state.get_current_action_mask()
-        if action_mask is None:
-            action_mask = self._get_action_mask(self.current_state)
 
         info = {
             **self._get_info(),
-            "action_mask": np.asarray(action_mask, dtype=bool),
+            "action_mask": np.asarray(self._resolve_action_mask(), dtype=bool),
             "raw_state": self.current_state,
         }
 
@@ -164,6 +157,11 @@ class SchedulingEnvironment(gym.Env):
         obs = np.array(task_features + global_features + dc_features, dtype=np.float32)
         
         return obs
+    
+    def _resolve_action_mask(self):
+        if self.current_action_mask is not None:
+            return self.current_action_mask
+        return self._get_action_mask(self.current_state)
 
     #action masking, edge/cloud -> data center
     def _get_action_mask(self, state=None):
@@ -175,9 +173,8 @@ class SchedulingEnvironment(gym.Env):
             return mask
 
         #in current state, get edge and cloud vms
-        current_state = state["cluster"]
-        edge_vms = current_state.get("edgeVms", [])
-        cloud_vms = current_state.get("cloudVms", [])
+        edge_vms = state["cluster"].get("edgeVms", [])
+        cloud_vms = state["cluster"].get("cloudVms", [])
 
         #debug, check if receiving index or raw id
         if not hasattr(self, "_printed_dc_ids"):
@@ -198,9 +195,11 @@ class SchedulingEnvironment(gym.Env):
         
         return mask
     
+    def action_masks(self):
+        return np.asarray(self._resolve_action_mask(), dtype=bool)
+    
     def _get_data_center_features(self, vm_list, dc_id):
         dc_vms = [vm for vm in vm_list if int(vm["dcId"]) == int(dc_id)]
-
         vm_count = len(dc_vms)
         has_available_vm = 1.0 if vm_count > 0 else 0.0
         total_available_mips = sum(float(vm["availableMips"]) for vm in dc_vms)
@@ -258,12 +257,12 @@ class SchedulingEnvironment(gym.Env):
         )
 
         #return action: edge/cloud + data center id + vm id
-        return ({
+        return {
             "tier": tier_name,
             "datacenterId": int(dc_idx),
             "vmId": int(vm_id), 
             "actionIndex": int(action)
-        })
+        }
     
     def _get_info(self):
         return self.current_info
@@ -276,9 +275,3 @@ class SchedulingEnvironment(gym.Env):
     
     def get_obs(self):
         return self._get_obs(self.current_state)
-    
-    def action_masks(self):
-        action_mask = bridge_state.get_current_action_mask()
-        if action_mask is not None:
-            return np.asarray(action_mask, dtype=bool)
-        return self._get_action_mask(self.current_state)

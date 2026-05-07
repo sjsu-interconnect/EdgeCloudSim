@@ -360,7 +360,7 @@ public class DagRuntimeManager extends SimEntity {
 
         processTaskFinished(task);
 
-        boolean done = activeDags.isEmpty();
+        boolean done = activeDags.isEmpty() && (dagsArrivedCount >= allDags.size());
 
         // boolean done = !activeDags.containsKey(dagId);
         DagRecord nextDag = done ? null : findAnyActiveDagWithPendingTask();
@@ -434,8 +434,11 @@ public class DagRuntimeManager extends SimEntity {
                     dag.getApplicationName(), CloudSim.clock(),
                     taskId, dagId,
                     dag.getCompletedTasks(), dag.getTotalTasks()));
- 
-                // If this failure completes the DAG (all tasks done/failed)
+
+                // Cascade failure to all downstream tasks that can no longer run
+                cascadeFailure(dag, task);
+
+                // If this failure (+ cascade) completes the DAG
                 if (dag.isComplete()) {
                     dag.setState(DagRecord.DagState.COMPLETE);
                     dag.setCompleteTimeMs(CloudSim.clock() * 1000.0);
@@ -527,6 +530,25 @@ public class DagRuntimeManager extends SimEntity {
                                                                                    // summary
             activeDags.remove(dagId);
             dagCostSoFar.remove(dagId);
+        }
+    }
+
+    /**
+    * helper function that marks all tasks in the dag with failed task as done to terminate
+    */
+    private void cascadeFailure(DagRecord dag, TaskRecord failedTask) {
+        for (String childId : failedTask.getChildren()) {
+            TaskRecord child = dag.getTask(childId);
+            if (child != null && child.getState() != TaskRecord.TaskState.DONE) {
+                child.setState(TaskRecord.TaskState.DONE);
+                dag.incrementCompletedTasks();
+                System.out.println(String.format(
+                    "[%s] [%.2f] Task SKIPPED (upstream failed): %s of %s (%d/%d)",
+                    dag.getApplicationName(), CloudSim.clock(),
+                    childId, dag.getDagId(),
+                    dag.getCompletedTasks(), dag.getTotalTasks()));
+                cascadeFailure(dag, child); // recurse to grandchildren
+            }
         }
     }
 
