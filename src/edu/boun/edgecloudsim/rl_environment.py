@@ -30,6 +30,9 @@ class SchedulingEnvironment(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
 
+        # Signal batch script that training.py is ready for next episode
+        redis_bridge.set_episode_ready()
+
         try:
             payload = redis_bridge.pop_act_request(self.timeout_seconds)
         except TimeoutError:

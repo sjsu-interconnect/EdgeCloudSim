@@ -22,6 +22,8 @@ ACTION_QUEUE  = "rl:action_queue"
 OBSERVE_QUEUE = "rl:observe_queue"
 REQUEST_ID    = "rl:request_id"
 
+EPISODE_READY = "rl:episode_ready"
+
 
 class RedisBridge:
     def __init__(self, host=REDIS_HOST, port=REDIS_PORT):
@@ -31,6 +33,17 @@ class RedisBridge:
         """Clear all Redis data — call once at flask_server.py startup."""
         self.r.flushall()
         print("[RedisBridge] All Redis data flushed.")
+
+    def set_episode_ready(self):
+        """Signal that training.py is ready for next episode.
+        Called by rl_environment.py reset() before blocking on pop_act_request.
+        Polled by run_config_batch.sh before starting each Java run."""
+        self.r.set(EPISODE_READY, "1")
+
+    def clear_episode_ready(self):
+        """Clear the ready signal — called by batch script before starting Java."""
+        self.r.delete(EPISODE_READY)
+
 
     # ── Flask side ─────────────────────────────────────────────────────────────
 

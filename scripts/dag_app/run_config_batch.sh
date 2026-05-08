@@ -38,8 +38,16 @@ PARSER_JOBS=()
 
 for i in $(seq 1 "${NUM_RUNS}"); do
   RUN_TAG="ite$(printf '%02d' "${i}")"
+  
+  echo "[${RUN_TAG}] waiting for training.py to be ready..."
+  while [ "$(redis-cli get rl:episode_ready 2>/dev/null)" != "1" ]; do
+    sleep 0.5
+  done
+  redis-cli del rl:episode_ready > /dev/null
+  echo "[${RUN_TAG}] training.py ready — starting simulation"
 
-  echo "[${RUN_TAG}] starting simulation"
+
+  # echo "[${RUN_TAG}] starting simulation"
   "${SCRIPT_DIR}/runner.sh" "${BATCH_ROOT}" "${CONFIG_NAME}" "${EDGE_DEVICES_FILE}" "${APPLICATIONS_FILE}" "${i}"
 
   LOG_PATH="${CONFIG_ROOT}/ite${i}.log"

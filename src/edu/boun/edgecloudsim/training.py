@@ -11,7 +11,7 @@ def main():
 
     try:
         print("Start PPO training")
-        agent.train(total_timesteps=6500)
+        agent.train(total_timesteps=1000000)
         print("agent.train returned normally")
     except RuntimeError as e:
         print(f"Training ended (simulation finished): {e}")
