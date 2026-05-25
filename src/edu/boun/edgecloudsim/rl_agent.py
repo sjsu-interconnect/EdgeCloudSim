@@ -1,4 +1,5 @@
 from sb3_contrib import MaskablePPO
+from gnn_policy import GNNExtractor
 
 class SchedulingAgent:
     def __init__(self, env, model_path=None):
@@ -6,10 +7,23 @@ class SchedulingAgent:
         self.env = env
         self.model_path = model_path
 
+        # GNN feature extractor configuration
+        policy_kwargs = dict(
+            features_extractor_class=GNNExtractor,
+            features_extractor_kwargs=dict(
+                num_edge_dc=8,
+                num_cloud_dc=1,
+                hidden_dim=128,
+                n_layers=2,
+            ),
+            net_arch=dict(pi=[128, 64], vf=[128, 64]),
+        )
+
         if model_path is not None:
             self.model = MaskablePPO.load(model_path, env=env)
         else:
-            self.model = MaskablePPO("MlpPolicy", env, verbose=1)
+            self.model = MaskablePPO("MlpPolicy", env, policy_kwargs=policy_kwargs, verbose=1, tensorboard_log="./tensorboard_logs/")
+
 
     #get action decision from agent
     def act(self, obs, action_mask):

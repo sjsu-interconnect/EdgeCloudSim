@@ -119,28 +119,46 @@ public class DagJsonLoader {
         }
 
         List<DagRecord> dags = new ArrayList<>();
+
+        // First try parsing as standard JSON (object or {"dags":[...]} container)
         try (FileReader reader = new FileReader(f)) {
             JsonElement elem = JsonParser.parseReader(reader);
-            if (!elem.isJsonObject()) {
-                throw new IOException("Invalid DAG JSON root in " + path);
-            }
-            JsonObject root = elem.getAsJsonObject();
-            if (root.has("dags") && root.get("dags").isJsonArray()) {
-                JsonArray arr = root.getAsJsonArray("dags");
-                for (JsonElement dagElem : arr) {
-                    if (dagElem.isJsonObject()) {
-                        DagRecord dag = parseSingleDag(dagElem.getAsJsonObject());
-                        if (dag != null) {
-                            dags.add(dag);
+            if (elem.isJsonObject()) {
+                JsonObject root = elem.getAsJsonObject();
+                if (root.has("dags") && root.get("dags").isJsonArray()) {
+                    JsonArray arr = root.getAsJsonArray("dags");
+                    for (JsonElement dagElem : arr) {
+                        if (dagElem.isJsonObject()) {
+                            DagRecord dag = parseSingleDag(dagElem.getAsJsonObject());
+                            if (dag != null) dags.add(dag);
                         }
                     }
-                }
-            } else {
-                DagRecord dag = parseSingleDag(root);
-                if (dag != null) {
-                    dags.add(dag);
+                } else {
+                    DagRecord dag = parseSingleDag(root);
+                    if (dag != null) dags.add(dag);
                 }
             }
+        } catch (JsonSyntaxException e) {
+            // Not valid single JSON — try JSON Lines format (one object per line)
+            System.out.println("Standard JSON parse failed, trying JSON Lines format for: " + path);
+            dags.clear();
+            try (java.io.BufferedReader br = new java.io.BufferedReader(new FileReader(f))) {
+                String line;
+                int lineNum = 0;
+                while ((line = br.readLine()) != null) {
+                    lineNum++;
+                    line = line.trim();
+                    if (line.isEmpty()) continue;
+                    try {
+                        JsonObject dagJson = JsonParser.parseString(line).getAsJsonObject();
+                        DagRecord dag = parseSingleDag(dagJson);
+                        if (dag != null) dags.add(dag);
+                    } catch (Exception lineEx) {
+                        System.err.println("Skipping invalid JSON on line " + lineNum + ": " + lineEx.getMessage());
+                    }
+                }
+            }
+            System.out.println("Loaded " + dags.size() + " DAGs from JSON Lines file: " + path);
         }
 
         dags.sort(Comparator.comparingDouble(DagRecord::getSubmissionTimeEpochSec));

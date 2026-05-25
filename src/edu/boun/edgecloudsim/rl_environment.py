@@ -2,6 +2,7 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 from redis_bridge import redis_bridge
+from gnn_policy import build_graph_obs, graph_obs_dim
 
 class SchedulingEnvironment(gym.Env):
     def __init__(self, num_edge_dc=8, num_cloud_dc=1, timeout_seconds=120):
@@ -11,7 +12,8 @@ class SchedulingEnvironment(gym.Env):
         self.num_cloud_dc = num_cloud_dc
         self.total_dc = self.num_edge_dc + self.num_cloud_dc
 
-        OBSERVATION_SIZE = 2 + 4 + (6 * self.total_dc)
+        # OBSERVATION_SIZE = 2 + 4 + (6 * self.total_dc)
+        OBSERVATION_SIZE = graph_obs_dim(num_edge_dc, num_cloud_dc)
         
         #action space: pick type, data center
         self.total_actions = self.num_edge_dc + self.num_cloud_dc
@@ -120,6 +122,7 @@ class SchedulingEnvironment(gym.Env):
         #internal state to observation state representation, do not concern about vms within data center
         if state is None:
             return np.zeros(self.observation_space.shape, dtype=np.float32)
+        return build_graph_obs(state, self.num_edge_dc, self.num_cloud_dc)
         
         task = state["task"]
         clusterState = state["cluster"]
@@ -201,23 +204,23 @@ class SchedulingEnvironment(gym.Env):
     def action_masks(self):
         return np.asarray(self._resolve_action_mask(), dtype=bool)
     
-    def _get_data_center_features(self, vm_list, dc_id):
-        dc_vms = [vm for vm in vm_list if int(vm["dcId"]) == int(dc_id)]
-        vm_count = len(dc_vms)
-        has_available_vm = 1.0 if vm_count > 0 else 0.0
-        total_available_mips = sum(float(vm["availableMips"]) for vm in dc_vms)
-        avg_available_mips = total_available_mips / vm_count if vm_count > 0 else 0.0
-        avg_utilization = sum(float(vm["utilization"]) for vm in dc_vms) / vm_count if vm_count > 0 else 0.0
-        total_queue_len = sum(int(vm["queueLen"]) for vm in dc_vms)
+    # def _get_data_center_features(self, vm_list, dc_id):
+    #     dc_vms = [vm for vm in vm_list if int(vm["dcId"]) == int(dc_id)]
+    #     vm_count = len(dc_vms)
+    #     has_available_vm = 1.0 if vm_count > 0 else 0.0
+    #     total_available_mips = sum(float(vm["availableMips"]) for vm in dc_vms)
+    #     avg_available_mips = total_available_mips / vm_count if vm_count > 0 else 0.0
+    #     avg_utilization = sum(float(vm["utilization"]) for vm in dc_vms) / vm_count if vm_count > 0 else 0.0
+    #     total_queue_len = sum(int(vm["queueLen"]) for vm in dc_vms)
 
-        return [
-            self.normalize(vm_count / 10.0),
-            self.normalize(avg_available_mips / 10000.0),
-            self.normalize(total_available_mips / 50000.0),
-            self.normalize(avg_utilization),
-            self.normalize(total_queue_len / 100.0),
-            has_available_vm
-        ]
+    #     return [
+    #         self.normalize(vm_count / 10.0),
+    #         self.normalize(avg_available_mips / 10000.0),
+    #         self.normalize(total_available_mips / 50000.0),
+    #         self.normalize(avg_utilization),
+    #         self.normalize(total_queue_len / 100.0),
+    #         has_available_vm
+    #     ]
     
     def action_to_json(self, action, state=None):
         action = int(action)
@@ -273,8 +276,8 @@ class SchedulingEnvironment(gym.Env):
     def render(self):
         pass
 
-    def normalize(self, value):
-        return float(np.clip(value, 0.0, 1.0))
+    # def normalize(self, value):
+    #     return float(np.clip(value, 0.0, 1.0))
     
     def get_obs(self):
         return self._get_obs(self.current_state)

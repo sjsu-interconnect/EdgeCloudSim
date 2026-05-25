@@ -51,6 +51,8 @@ public class DagRuntimeManager extends SimEntity {
     private PrintWriter dagLogWriter;
     private long totalDagRunTimeMs = 0; // Track total runtime across all DAGs
     private int dagsArrivedCount = 0; // DAG_SUBMIT events actually processed
+    private int successfullyCompletedDagsCount = 0; // DAGs where all tasks completed without any failure
+    private Set<String> failedDagIds = new HashSet<>(); // DAGs that had at least one task failure
     private final Set<String> dagsWithScheduledTasks = new HashSet<>(); // DAGs that reached scheduling path
 
     private boolean rlDecisionInFlight = false;
@@ -437,6 +439,7 @@ public class DagRuntimeManager extends SimEntity {
 
                 // Cascade failure to all downstream tasks that can no longer run
                 cascadeFailure(dag, task);
+                failedDagIds.add(dagId); // Mark this DAG as having at least one failure
 
                 // If this failure (+ cascade) completes the DAG
                 if (dag.isComplete()) {
@@ -523,6 +526,9 @@ public class DagRuntimeManager extends SimEntity {
             dag.setCompleteTimeMs(task.getFinishTimeMs());
             long makespanMs = (long) dag.getMakespanMs();
             totalDagRunTimeMs += makespanMs; // Accumulate total runtime
+            if (!failedDagIds.contains(dagId)) {
+                successfullyCompletedDagsCount++; // Only count if no tasks failed in this DAG
+            }
             System.out.println("[" + String.format("%.2f", CloudSim.clock()) + "] DAG complete: " + dagId
                     + " Makespan: " + String.format("%.2f", (double) makespanMs) + " ms");
             logDagCompletion(dag);
@@ -652,8 +658,13 @@ public class DagRuntimeManager extends SimEntity {
             System.out.println("Total DAGs configured: " + allDags.size());
             System.out.println("Total DAGs arrived (DAG_SUBMIT processed): " + dagsArrivedCount);
             System.out.println("Total DAGs with >=1 task scheduled: " + dagsWithScheduledTasks.size());
+            System.out.println("Total DAGs successfully completed: " + successfullyCompletedDagsCount);
+            System.out.println("Total DAGs failed/incomplete: " + (dagsArrivedCount - successfullyCompletedDagsCount));
             System.out.println("Total DAG runtime (sum of makespans): " + totalDagRunTimeMs + " ms");
-            if (dagsWithScheduledTasks.size() > 0) {
+            if (successfullyCompletedDagsCount > 0) {
+                System.out.println("Average DAG makespan (over completed DAGs): "
+                        + (totalDagRunTimeMs / (double) successfullyCompletedDagsCount) + " ms");
+            } else if (dagsWithScheduledTasks.size() > 0) {
                 System.out.println("Average DAG makespan (over scheduled DAGs): "
                         + (totalDagRunTimeMs / (double) dagsWithScheduledTasks.size()) + " ms");
             }
