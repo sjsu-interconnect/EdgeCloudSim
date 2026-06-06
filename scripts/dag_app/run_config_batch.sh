@@ -34,6 +34,7 @@ echo "Compiling once before runs..."
 "${SCRIPT_DIR}/compile.sh"
 
 PARSER="${SCRIPT_DIR}/parse_iteration_log.py"
+REWARD_PARSER="${SCRIPT_DIR}/summarize_reward_log.py"
 PARSER_JOBS=()
 
 for i in $(seq 1 "${NUM_RUNS}"); do
@@ -52,6 +53,8 @@ for i in $(seq 1 "${NUM_RUNS}"); do
 
   LOG_PATH="${CONFIG_ROOT}/ite${i}.log"
   METRIC_JSON="${CONFIG_ROOT}/metrics_ite${i}.json"
+  REWARD_LOG_PATH="${CONFIG_ROOT}/reward_log_ite${i}.csv"
+  REWARD_METRIC_JSON="${CONFIG_ROOT}/reward_metrics_ite${i}.json"
 
   if [[ -f "${LOG_PATH}" ]]; then
     echo "[${RUN_TAG}] parsing log asynchronously"
@@ -59,6 +62,14 @@ for i in $(seq 1 "${NUM_RUNS}"); do
     PARSER_JOBS+=("$!")
   else
     echo "[${RUN_TAG}] WARNING: log not found at ${LOG_PATH}"
+  fi
+
+  if [[ -f "${REWARD_LOG_PATH}" ]]; then
+    echo "[${RUN_TAG}] parsing reward log asynchronously"
+    python3 "${REWARD_PARSER}" "${REWARD_LOG_PATH}" --out "${REWARD_METRIC_JSON}" > "${CONFIG_ROOT}/reward_metrics_ite${i}.txt" &
+    PARSER_JOBS+=("$!")
+  else
+    echo "[${RUN_TAG}] WARNING: reward log not found at ${REWARD_LOG_PATH}"
   fi
 done
 

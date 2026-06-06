@@ -124,6 +124,11 @@ public class SimSettings {
 	private double RL_ALPHA_C;
 	private double RL_L_HAT;
 	private double RL_C_HAT;
+	private double RL_LATENCY_MIN_MS;
+	private double RL_LATENCY_MAX_MS;
+	private double RL_COST_MIN;
+	private double RL_COST_MAX;
+	private boolean RL_CLIP_NORMALIZED_REWARD;
 	private double RL_B_COST;
 	private double RL_BUDGET_PENALTY;
 	private double DAG_INTERARRIVAL_RATE;
@@ -267,6 +272,11 @@ public class SimSettings {
 			RL_ALPHA_C = Double.parseDouble(prop.getProperty("alpha_c", "1.0"));
 			RL_L_HAT = Double.parseDouble(prop.getProperty("l_hat", "1000.0"));
 			RL_C_HAT = Double.parseDouble(prop.getProperty("c_hat", "1.0"));
+			RL_LATENCY_MIN_MS = Double.parseDouble(prop.getProperty("latency_min_ms", "0.0"));
+			RL_LATENCY_MAX_MS = Double.parseDouble(prop.getProperty("latency_max_ms", "-1.0"));
+			RL_COST_MIN = Double.parseDouble(prop.getProperty("cost_min", "0.0"));
+			RL_COST_MAX = Double.parseDouble(prop.getProperty("cost_max", "-1.0"));
+			RL_CLIP_NORMALIZED_REWARD = Boolean.parseBoolean(prop.getProperty("clip_normalized_reward", "true"));
 			RL_B_COST = Double.parseDouble(prop.getProperty("b_cost", "100.0"));
 			RL_BUDGET_PENALTY = Double.parseDouble(prop.getProperty("budget_penalty", "-1.0"));
 			DAG_INTERARRIVAL_RATE = Double.parseDouble(prop.getProperty("dag_interarrival_rate", "60.0"));
@@ -627,6 +637,26 @@ public class SimSettings {
 
 	public double getRlCHat() {
 		return RL_C_HAT;
+	}
+
+	public double getRlLatencyMinMs() {
+		return RL_LATENCY_MIN_MS;
+	}
+
+	public double getRlLatencyMaxMs() {
+		return RL_LATENCY_MAX_MS;
+	}
+
+	public double getRlCostMin() {
+		return RL_COST_MIN;
+	}
+
+	public double getRlCostMax() {
+		return RL_COST_MAX;
+	}
+
+	public boolean getRlClipNormalizedReward() {
+		return RL_CLIP_NORMALIZED_REWARD;
 	}
 
 	public double getRlBudgetCost() {

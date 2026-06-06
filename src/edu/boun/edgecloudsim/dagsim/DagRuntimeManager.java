@@ -49,11 +49,23 @@ public class DagRuntimeManager extends SimEntity {
 
     private PrintWriter taskLogWriter;
     private PrintWriter dagLogWriter;
+    private PrintWriter rewardLogWriter;
     private long totalDagRunTimeMs = 0; // Track total runtime across all DAGs
     private int dagsArrivedCount = 0; // DAG_SUBMIT events actually processed
     private int successfullyCompletedDagsCount = 0; // DAGs where all tasks completed without any failure
     private Set<String> failedDagIds = new HashSet<>(); // DAGs that had at least one task failure
     private final Set<String> dagsWithScheduledTasks = new HashSet<>(); // DAGs that reached scheduling path
+
+    private long rewardSampleCount = 0;
+    private double minLatencyTerm = Double.POSITIVE_INFINITY;
+    private double maxLatencyTerm = Double.NEGATIVE_INFINITY;
+    private double sumLatencyTerm = 0.0;
+    private double minCostTerm = Double.POSITIVE_INFINITY;
+    private double maxCostTerm = Double.NEGATIVE_INFINITY;
+    private double sumCostTerm = 0.0;
+    private double minReward = Double.POSITIVE_INFINITY;
+    private double maxReward = Double.NEGATIVE_INFINITY;
+    private double sumReward = 0.0;
 
     private boolean rlDecisionInFlight = false;
     private final java.util.Queue<TaskRecord> pendingReadyTasks = new java.util.LinkedList<>();
@@ -66,11 +78,13 @@ public class DagRuntimeManager extends SimEntity {
         try {
             this.taskLogWriter = new PrintWriter(new FileWriter("task_log.csv"));
             this.dagLogWriter = new PrintWriter(new FileWriter("dag_summary.csv"));
+            this.rewardLogWriter = new PrintWriter(new FileWriter("reward_log.csv"));
         } catch (IOException e) {
             throw new RuntimeException("Failed to open DAG log files", e);
         }
         writeTaskLogHeader();
         writeDagLogHeader();
+        writeRewardLogHeader();
         instance = this;
     }
 
@@ -334,29 +348,64 @@ public class DagRuntimeManager extends SimEntity {
         // Fetch deep metrics from SimLogger
         Map<String, Double> metrics = SimLogger.getInstance().getTaskMetrics((int) cloudletId);
         double actualCost = 0.0;
+        double bwCost = 0.0;
+        double cpuCost = 0.0;
+        String costSource = "missing_metrics";
         if (metrics != null) {
             task.setUploadDelayMs(metrics.getOrDefault("lanUploadDelay", 0.0) * 1000.0
                     + metrics.getOrDefault("wanUploadDelay", 0.0) * 1000.0);
             task.setDownloadDelayMs(metrics.getOrDefault("lanDownloadDelay", 0.0) * 1000.0
                     + metrics.getOrDefault("wanDownloadDelay", 0.0) * 1000.0);
             task.setNetworkDelayMs(metrics.getOrDefault("netDelay", 0.0) * 1000.0);
-            actualCost = metrics.getOrDefault("bwCost", 0.0) + metrics.getOrDefault("cpuCost", 0.0);
+            bwCost = metrics.getOrDefault("bwCost", 0.0);
+            cpuCost = metrics.getOrDefault("cpuCost", 0.0);
+            actualCost = bwCost + cpuCost;
+            costSource = "sim_logger";
 
-            double queueDelay = (task.getStartTimeMs() - task.getScheduledTimeMs());
-            task.setQueueDelayMs(Math.max(0, queueDelay));
+            // double queueDelay = (task.getStartTimeMs() - task.getScheduledTimeMs());
+            // task.setQueueDelayMs(Math.max(0, queueDelay));
+        }
+        double queueDelay = (task.getStartTimeMs() - task.getScheduledTimeMs());
+        task.setQueueDelayMs(Math.max(0, queueDelay));
+        if (actualCost <= 0.0) {
+            double[] fallbackCosts = estimateCloudletCost(cloudlet);
+            bwCost = fallbackCosts[0];
+            cpuCost = fallbackCosts[1];
+            actualCost = bwCost + cpuCost;
+            costSource = "fallback_cloudlet";
         }
 
-        double actualLatency = Math.max(0.0, task.getFinishTimeMs() - task.getReadyTimeMs());
+        // double actualLatency = Math.max(0.0, task.getFinishTimeMs() - task.getReadyTimeMs());
+        
+        //Timer for latency starts task scheduled using RL agent action
+        double readyWaitMs = Math.max(0.0, task.getScheduledTimeMs() - task.getReadyTimeMs());
+        double actualLatency = Math.max(0.0, task.getFinishTimeMs() - task.getScheduledTimeMs());
         double newCostSoFar = dagCostSoFar.getOrDefault(dagId, 0.0) + actualCost;
         dagCostSoFar.put(dagId, newCostSoFar);
 
         SimSettings ss = SimSettings.getInstance();
-        double reward = -1.0 * ((ss.getRlAlphaL() * (actualLatency / Math.max(1e-9, ss.getRlLHat())))
-                + (ss.getRlAlphaC() * (actualCost / Math.max(1e-9, ss.getRlCHat()))));
+        double latencyTerm = ss.getRlAlphaL() * normalizeRewardComponent(
+                actualLatency,
+                ss.getRlLatencyMinMs(),
+                ss.getRlLatencyMaxMs(),
+                ss.getRlLHat(),
+                ss.getRlClipNormalizedReward());
+        double costTerm = ss.getRlAlphaC() * normalizeRewardComponent(
+                actualCost,
+                ss.getRlCostMin(),
+                ss.getRlCostMax(),
+                ss.getRlCHat(),
+                ss.getRlClipNormalizedReward());
+        double budgetPenaltyApplied = 0.0;
+        double reward = -1.0 * (latencyTerm + costTerm);
         boolean budgetViolated = newCostSoFar > ss.getRlBudgetCost();
         if (budgetViolated) {
-            reward += ss.getRlBudgetPenalty();
+            budgetPenaltyApplied = ss.getRlBudgetPenalty();
+            reward += budgetPenaltyApplied;
         }
+        updateRewardSummary(latencyTerm, costTerm, reward);
+        logRewardBreakdown(task, dag, actualLatency, readyWaitMs, actualCost, bwCost, cpuCost, costSource, newCostSoFar,
+                latencyTerm, costTerm, budgetPenaltyApplied, reward, budgetViolated);
 
         RemoteRLPolicy.DecisionTrace trace = RemoteRLPolicy.consumeTrace(dagId, taskId);
 
@@ -668,6 +717,7 @@ public class DagRuntimeManager extends SimEntity {
                 System.out.println("Average DAG makespan (over scheduled DAGs): "
                         + (totalDagRunTimeMs / (double) dagsWithScheduledTasks.size()) + " ms");
             }
+            printRewardSummary();
             System.out.println("==========================================");
         } catch (Exception e) {
             System.err.println("Error in DAG shutdown: " + e.getMessage());
@@ -687,6 +737,13 @@ public class DagRuntimeManager extends SimEntity {
                 }
             } catch (Exception e) {
             }
+            try {
+                if (rewardLogWriter != null) {
+                    rewardLogWriter.flush();
+                    rewardLogWriter.close();
+                }
+            } catch (Exception e) {
+            }
         }
     }
 
@@ -700,6 +757,65 @@ public class DagRuntimeManager extends SimEntity {
         dagLogWriter.println(
                 "dag_id,submit_ms,finish_ms,makespan_ms,total_tasks,edge_tasks,cloud_tasks,total_net_ms,total_wan_bytes");
         dagLogWriter.flush();
+    }
+
+    private void writeRewardLogHeader() {
+        rewardLogWriter.println(
+                // "sim_time_ms,dag_id,task_id,task_type,tier,datacenter_id,vm_id,ready_ms,scheduled_ms,start_ms,finish_ms,latency_ms,queue_wait_ms,network_ms,bw_cost,cpu_cost,actual_cost,cost_source,cost_so_far,budget,latency_term,cost_term,budget_penalty,reward,budget_violated");
+                "sim_time_ms,dag_id,task_id,task_type,tier,datacenter_id,vm_id,ready_ms,scheduled_ms,start_ms,finish_ms,ready_wait_ms,latency_ms,queue_wait_ms,network_ms,bw_cost,cpu_cost,actual_cost,cost_source,cost_so_far,budget,latency_term,cost_term,budget_penalty,reward,budget_violated");
+        rewardLogWriter.flush();
+    }
+
+    private void updateRewardSummary(double latencyTerm, double costTerm, double reward) {
+        rewardSampleCount++;
+        minLatencyTerm = Math.min(minLatencyTerm, latencyTerm);
+        maxLatencyTerm = Math.max(maxLatencyTerm, latencyTerm);
+        sumLatencyTerm += latencyTerm;
+
+        minCostTerm = Math.min(minCostTerm, costTerm);
+        maxCostTerm = Math.max(maxCostTerm, costTerm);
+        sumCostTerm += costTerm;
+
+        minReward = Math.min(minReward, reward);
+        maxReward = Math.max(maxReward, reward);
+        sumReward += reward;
+    }
+
+    private void printRewardSummary() {
+        System.out.println("\n========== RL REWARD SUMMARY ==========");
+        System.out.println("Reward samples: " + rewardSampleCount);
+        if (rewardSampleCount > 0) {
+            System.out.println(String.format(
+                    "Latency term min/avg/max (normalized): %.6f / %.6f / %.6f",
+                    minLatencyTerm,
+                    sumLatencyTerm / (double) rewardSampleCount,
+                    maxLatencyTerm));
+            System.out.println(String.format(
+                    "Cost term min/avg/max (normalized): %.12f / %.12f / %.12f",
+                    minCostTerm,
+                    sumCostTerm / (double) rewardSampleCount,
+                    maxCostTerm));
+            System.out.println(String.format(
+                    "Reward min/avg/max: %.6f / %.6f / %.6f",
+                    minReward,
+                    sumReward / (double) rewardSampleCount,
+                    maxReward));
+        }
+        System.out.println("=======================================");
+    }
+
+    private double normalizeRewardComponent(double value, double minValue, double maxValue, double fallbackScale, boolean clip) {
+        double normalized;
+        if (maxValue > minValue) {
+            normalized = (value - minValue) / Math.max(1e-9, maxValue - minValue);
+        } else {
+            normalized = value / Math.max(1e-9, fallbackScale);
+        }
+
+        if (clip) {
+            normalized = Math.max(0.0, Math.min(1.0, normalized));
+        }
+        return normalized;
     }
 
     private void logTaskCompletion(TaskRecord task, DagRecord dag) {
@@ -780,6 +896,74 @@ public class DagRuntimeManager extends SimEntity {
                 "-1" // total_wan_bytes (still not computed)
         ));
         dagLogWriter.flush(); // Flush after each DAG
+    }
+
+    private double[] estimateCloudletCost(Task cloudlet) {
+        int datacenterId = cloudlet.getAssociatedDatacenterId();
+        if (datacenterId == SimSettings.CLOUD_DATACENTER_ID) {
+            datacenterId = SimManager.getInstance().getCloudServerManager().getDatacenter().getId();
+        } else if (datacenterId == SimSettings.GENERIC_EDGE_DEVICE_ID) {
+            datacenterId = SimManager.getInstance().getEdgeServerManager().getDatacenterList().get(0).getId();
+        }
+
+        Double[] costs = SimSettings.datacenterCosts.get(datacenterId);
+        double costPerBw = (costs != null) ? costs[0] : 0.00000000009;
+        double costPerSec = (costs != null) ? costs[1] : 0.0002083333;
+        double costPerMem = (costs != null) ? costs[2] : 0.0;
+        double costPerStorage = (costs != null) ? costs[3] : 0.0;
+
+        double totalBytes = cloudlet.getCloudletFileSize() + cloudlet.getCloudletOutputSize();
+        double bwCost = Math.max(0.0, totalBytes * costPerBw);
+        double cpuCost = Math.max(0.0, cloudlet.getActualCPUTime() * costPerSec);
+
+        double vmRam = (cloudlet.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID)
+                ? SimSettings.getInstance().getRamForCloudVM()
+                : SimSettings.getInstance().getRamForMobileVM();
+        cpuCost += Math.max(0.0, vmRam * costPerMem);
+        cpuCost += Math.max(0.0, cloudlet.getCloudletOutputSize() * costPerStorage / 1024.0);
+
+        return new double[] { bwCost, cpuCost };
+    }
+
+    // private void logRewardBreakdown(TaskRecord task, DagRecord dag, double actualLatency, double actualCost,
+    //         double bwCost, double cpuCost, String costSource, double costSoFar, double latencyTerm, double costTerm,
+    //         double budgetPenaltyApplied, double reward, boolean budgetViolated) {
+    private void logRewardBreakdown(TaskRecord task, DagRecord dag, double actualLatency, double readyWaitMs,
+            double actualCost, double bwCost, double cpuCost, String costSource, double costSoFar,
+            double latencyTerm, double costTerm, double budgetPenaltyApplied, double reward, boolean budgetViolated) {
+        if (rewardLogWriter == null || task == null || dag == null) {
+            return;
+        }
+
+        SimSettings ss = SimSettings.getInstance();
+        rewardLogWriter.println(String.join(",",
+                String.format("%.2f", CloudSim.clock() * 1000.0),
+                dag.getDagId(),
+                task.getTaskId(),
+                task.getTaskType(),
+                String.valueOf(task.getAssignedTier()),
+                String.valueOf(task.getAssignedDatacenterId()),
+                String.valueOf(task.getAssignedVmId()),
+                String.format("%.2f", task.getReadyTimeMs()),
+                String.format("%.2f", task.getScheduledTimeMs()),
+                String.format("%.2f", task.getStartTimeMs()),
+                String.format("%.2f", task.getFinishTimeMs()),
+                String.format("%.2f", readyWaitMs),
+                String.format("%.2f", actualLatency),
+                String.format("%.2f", task.getQueueDelayMs()),
+                String.format("%.2f", task.getNetworkDelayMs()),
+                String.format("%.12f", bwCost),
+                String.format("%.12f", cpuCost),
+                String.format("%.12f", actualCost),
+                costSource,
+                String.format("%.12f", costSoFar),
+                String.format("%.12f", ss.getRlBudgetCost()),
+                String.format("%.12f", latencyTerm),
+                String.format("%.12f", costTerm),
+                String.format("%.12f", budgetPenaltyApplied),
+                String.format("%.12f", reward),
+                String.valueOf(budgetViolated)));
+        rewardLogWriter.flush();
     }
 
 }
