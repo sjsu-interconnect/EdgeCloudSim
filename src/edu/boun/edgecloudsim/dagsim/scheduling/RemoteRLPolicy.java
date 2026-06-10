@@ -35,6 +35,11 @@ public class RemoteRLPolicy implements SchedulingPolicy {
     public static class DecisionTrace {
         public JsonObject state;
         public JsonObject action;
+        public int selectedDcVmCount = -1;
+        public int selectedDcQueueLen = -1;
+        public double selectedDcAvgQueueLen = -1.0;
+        public double selectedDcMaxQueueLen = -1.0;
+        public double selectedDcAvgUtilization = -1.0;
     }
 
     public RemoteRLPolicy(String serviceUrl) {
@@ -86,6 +91,7 @@ public class RemoteRLPolicy implements SchedulingPolicy {
                 DecisionTrace trace = new DecisionTrace();
                 trace.state = stateJson;
                 trace.action = actionObj;
+                populateSelectedDcStats(trace, state, tier, datacenterId);
                 TRACE_BY_TASK.put(key(task.dagId, task.taskId), trace);
             }
 
@@ -114,6 +120,7 @@ public class RemoteRLPolicy implements SchedulingPolicy {
                 DecisionTrace trace = new DecisionTrace();
                 trace.state = stateJson;
                 trace.action = actionObj;
+                populateSelectedDcStats(trace, state, fallback.destTier, fallback.destDatacenterId);
                 TRACE_BY_TASK.put(key(task.dagId, task.taskId), trace);
             }
 
@@ -442,5 +449,49 @@ public class RemoteRLPolicy implements SchedulingPolicy {
         }
 
         return best != null ? best.vmId : dcVms[0].vmId;
+    }
+
+    private static void populateSelectedDcStats(DecisionTrace trace, ClusterState state, int tier, int datacenterId) {
+        if (trace == null || state == null || state.vms == null) {
+            return;
+        }
+        if (tier < 0 || tier >= state.vms.length || state.vms[tier] == null) {
+            return;
+        }
+        if (datacenterId < 0 || datacenterId >= state.vms[tier].length) {
+            return;
+        }
+
+        ClusterState.VMInfo[] dcVms = state.vms[tier][datacenterId];
+        if (dcVms == null || dcVms.length == 0) {
+            trace.selectedDcVmCount = 0;
+            trace.selectedDcQueueLen = 0;
+            trace.selectedDcAvgQueueLen = 0.0;
+            trace.selectedDcMaxQueueLen = 0.0;
+            trace.selectedDcAvgUtilization = 0.0;
+            return;
+        }
+
+        int vmCount = 0;
+        int totalQueue = 0;
+        int maxQueue = 0;
+        double utilSum = 0.0;
+        for (ClusterState.VMInfo vm : dcVms) {
+            if (vm == null) {
+                continue;
+            }
+            vmCount++;
+            totalQueue += vm.queuedTaskCount;
+            maxQueue = Math.max(maxQueue, vm.queuedTaskCount);
+            double util = vm.queuedTaskCount <= 0 ? 0.0
+                    : Math.min(1.0, vm.queuedTaskCount / (double) (vm.queuedTaskCount + 1));
+            utilSum += util;
+        }
+
+        trace.selectedDcVmCount = vmCount;
+        trace.selectedDcQueueLen = totalQueue;
+        trace.selectedDcAvgQueueLen = vmCount > 0 ? totalQueue / (double) vmCount : 0.0;
+        trace.selectedDcMaxQueueLen = maxQueue;
+        trace.selectedDcAvgUtilization = vmCount > 0 ? utilSum / (double) vmCount : 0.0;
     }
 }

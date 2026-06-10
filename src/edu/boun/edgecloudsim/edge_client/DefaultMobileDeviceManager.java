@@ -21,6 +21,8 @@ import org.cloudbus.cloudsim.Vm;
 import org.cloudbus.cloudsim.core.CloudSim;
 import org.cloudbus.cloudsim.core.CloudSimTags;
 import org.cloudbus.cloudsim.core.SimEvent;
+import java.util.HashMap;
+import java.util.Map;
 
 import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
@@ -46,6 +48,7 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 	private static final int REQUEST_RECEIVED_BY_EDGE_DEVICE = BASE + 2;
 	private static final int RESPONSE_RECEIVED_BY_MOBILE_DEVICE = BASE + 3;
 	private int taskIdCounter = 0; // Counter for generating unique task IDs
+	private final Map<Integer, Double> uploadDelayByTaskId = new HashMap<>();
 
 	/**
 	 * Constructor for default mobile device manager.
@@ -316,6 +319,7 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 				networkModel.uploadStarted(currentLocation, nextHopId);
 				SimLogger.getInstance().taskStarted(task.getCloudletId(), CloudSim.clock());
 				SimLogger.getInstance().setUploadDelay(task.getCloudletId(), WanDelay, NETWORK_DELAY_TYPES.WAN_DELAY);
+				uploadDelayByTaskId.put(task.getCloudletId(), WanDelay);
 				schedule(getId(), WanDelay, REQUEST_RECEIVED_BY_CLOUD, task);
 			} else {
 				// WAN bandwidth not available - reject task
@@ -337,6 +341,7 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 				schedule(getId(), WlanDelay, REQUEST_RECEIVED_BY_EDGE_DEVICE, task);
 				SimLogger.getInstance().taskStarted(task.getCloudletId(), CloudSim.clock());
 				SimLogger.getInstance().setUploadDelay(task.getCloudletId(), WlanDelay, NETWORK_DELAY_TYPES.WLAN_DELAY);
+				uploadDelayByTaskId.put(task.getCloudletId(), WlanDelay);
 			} else {
 				// WLAN bandwidth not available - reject task
 				SimLogger.getInstance().rejectedDueToBandwidth(
@@ -374,6 +379,9 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 			vmType = SimSettings.VM_TYPES.EDGE_VM.ordinal();
 
 		if (selectedVM != null) {
+			NetworkModel networkModel = SimManager.getInstance().getNetworkModel();
+			int activeCloudletsBeforeSubmit = selectedVM.getCloudletScheduler().getCloudletExecList().size();
+
 			// Associate task with the selected datacenter
 			if (datacenterId == SimSettings.CLOUD_DATACENTER_ID)
 				task.setAssociatedDatacenterId(SimSettings.CLOUD_DATACENTER_ID);
@@ -383,6 +391,30 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 			// Save resource assignment information
 			task.setAssociatedHostId(selectedVM.getHost().getId());
 			task.setAssociatedVmId(selectedVM.getId());
+
+			double uploadDelay = uploadDelayByTaskId.containsKey(task.getCloudletId())
+					? uploadDelayByTaskId.remove(task.getCloudletId())
+					: Math.max(0.0, CloudSim.clock() - task.getSubmissionTime());
+			double estimatedDownloadDelay = 0.0;
+			if (task.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID) {
+				estimatedDownloadDelay = networkModel.getDownloadDelay(
+						SimSettings.CLOUD_DATACENTER_ID,
+						task.getMobileDeviceId(),
+						task);
+			} else {
+				estimatedDownloadDelay = networkModel.getDownloadDelay(
+						task.getAssociatedHostId(),
+						task.getMobileDeviceId(),
+						task);
+			}
+			if (DagRuntimeManager.getInstance() != null) {
+				DagRuntimeManager.getInstance().recordEstimatedReward(
+						task,
+						selectedVM.getMips(),
+						activeCloudletsBeforeSubmit,
+						uploadDelay,
+						estimatedDownloadDelay);
+			}
 
 			// Bind task to the selected VM using CloudSim mechanisms
 			getCloudletList().add(task);
@@ -398,6 +430,7 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 					selectedVM.getId(),
 					vmType);
 		} else {
+			uploadDelayByTaskId.remove(task.getCloudletId());
 			// SimLogger.printLine("Task #" + task.getCloudletId() + " cannot assign to any
 			// VM");
 			SimLogger.getInstance().rejectedDueToVMCapacity(task.getCloudletId(), CloudSim.clock(), vmType);

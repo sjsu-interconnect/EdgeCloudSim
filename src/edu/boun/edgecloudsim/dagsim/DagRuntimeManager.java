@@ -43,6 +43,7 @@ public class DagRuntimeManager extends SimEntity {
     // Map from CloudSim cloudlet id -> { dagId, taskId }
     private Map<Long, String[]> cloudletToDagMap = new HashMap<>();
     private Map<String, Double> dagCostSoFar = new HashMap<>();
+    private Map<String, EstimatedReward> estimatedRewardsByTask = new HashMap<>();
 
     // Singleton instance for global callbacks
     private static DagRuntimeManager instance = null;
@@ -69,6 +70,18 @@ public class DagRuntimeManager extends SimEntity {
 
     private boolean rlDecisionInFlight = false;
     private final java.util.Queue<TaskRecord> pendingReadyTasks = new java.util.LinkedList<>();
+
+    private static class EstimatedReward {
+        double latencyMs;
+        double cost;
+        double latencyTerm;
+        double costTerm;
+        double reward;
+        double uploadDelayMs;
+        double executionMs;
+        double downloadDelayMs;
+        int vmActiveCloudletsAtEstimate;
+    }
 
     public DagRuntimeManager(String name, List<DagRecord> dags) {
         super(name);
@@ -304,6 +317,58 @@ public class DagRuntimeManager extends SimEntity {
         }
     }
 
+    public void recordEstimatedReward(Task cloudlet, double vmMips, int vmActiveCloudletsAtEstimate,
+            double uploadDelaySec, double downloadDelaySec) {
+        if (cloudlet == null || cloudlet.getDagId() == null || cloudlet.getDagTaskId() == null) {
+            return;
+        }
+
+        DagRecord dag = activeDags.get(cloudlet.getDagId());
+        if (dag == null) {
+            return;
+        }
+        TaskRecord task = dag.getTask(cloudlet.getDagTaskId());
+        if (task == null) {
+            return;
+        }
+
+        double elapsedBeforeVmMs = Math.max(0.0, CloudSim.clock() * 1000.0 - task.getScheduledTimeMs());
+        double safeVmMips = Math.max(1e-9, vmMips);
+        double baseExecutionSec = cloudlet.getCloudletLength() / safeVmMips;
+        double timeSharedFactor = Math.max(1, vmActiveCloudletsAtEstimate + 1);
+        double estimatedExecutionSec = baseExecutionSec * timeSharedFactor;
+        double estimatedDownloadSec = Math.max(0.0, downloadDelaySec);
+
+        EstimatedReward estimate = new EstimatedReward();
+        estimate.uploadDelayMs = Math.max(0.0, uploadDelaySec) * 1000.0;
+        estimate.executionMs = estimatedExecutionSec * 1000.0;
+        estimate.downloadDelayMs = estimatedDownloadSec * 1000.0;
+        estimate.latencyMs = elapsedBeforeVmMs + estimate.executionMs + estimate.downloadDelayMs;
+        double[] estimatedCosts = estimateCloudletCost(cloudlet, estimatedExecutionSec);
+        estimate.cost = estimatedCosts[0] + estimatedCosts[1];
+        estimate.vmActiveCloudletsAtEstimate = vmActiveCloudletsAtEstimate;
+
+        SimSettings ss = SimSettings.getInstance();
+        estimate.latencyTerm = ss.getRlAlphaL() * normalizeRewardComponent(
+                estimate.latencyMs,
+                ss.getRlLatencyMinMs(),
+                ss.getRlLatencyMaxMs(),
+                ss.getRlLHat(),
+                ss.getRlClipNormalizedReward());
+        estimate.costTerm = ss.getRlAlphaC() * normalizeRewardComponent(
+                estimate.cost,
+                ss.getRlCostMin(),
+                ss.getRlCostMax(),
+                ss.getRlCHat(),
+                ss.getRlClipNormalizedReward());
+        estimate.reward = -1.0 * (estimate.latencyTerm + estimate.costTerm);
+        if (dagCostSoFar.getOrDefault(cloudlet.getDagId(), 0.0) + estimate.cost > ss.getRlBudgetCost()) {
+            estimate.reward += ss.getRlBudgetPenalty();
+        }
+
+        estimatedRewardsByTask.put(taskKey(cloudlet.getDagId(), cloudlet.getDagTaskId()), estimate);
+    }
+
     /**
      * Called by external components when a cloudlet finishes. This looks up the
      * DAG task and forwards to the internal completion handler.
@@ -403,11 +468,11 @@ public class DagRuntimeManager extends SimEntity {
             budgetPenaltyApplied = ss.getRlBudgetPenalty();
             reward += budgetPenaltyApplied;
         }
-        updateRewardSummary(latencyTerm, costTerm, reward);
-        logRewardBreakdown(task, dag, actualLatency, readyWaitMs, actualCost, bwCost, cpuCost, costSource, newCostSoFar,
-                latencyTerm, costTerm, budgetPenaltyApplied, reward, budgetViolated);
-
         RemoteRLPolicy.DecisionTrace trace = RemoteRLPolicy.consumeTrace(dagId, taskId);
+        EstimatedReward estimate = estimatedRewardsByTask.remove(taskKey(dagId, taskId));
+        updateRewardSummary(latencyTerm, costTerm, reward);
+        logRewardBreakdown(task, dag, actualLatency, readyWaitMs, actualCost, bwCost, cpuCost, costSource, trace, estimate,
+                newCostSoFar, latencyTerm, costTerm, budgetPenaltyApplied, reward, budgetViolated);
 
         processTaskFinished(task);
 
@@ -616,6 +681,10 @@ public class DagRuntimeManager extends SimEntity {
         return null;
     }
 
+    private String taskKey(String dagId, String taskId) {
+        return dagId + "::" + taskId;
+    }
+
     private TaskRecord findAnyPendingTask(DagRecord dag) {
         if (dag == null) {
             return null;
@@ -762,7 +831,7 @@ public class DagRuntimeManager extends SimEntity {
     private void writeRewardLogHeader() {
         rewardLogWriter.println(
                 // "sim_time_ms,dag_id,task_id,task_type,tier,datacenter_id,vm_id,ready_ms,scheduled_ms,start_ms,finish_ms,latency_ms,queue_wait_ms,network_ms,bw_cost,cpu_cost,actual_cost,cost_source,cost_so_far,budget,latency_term,cost_term,budget_penalty,reward,budget_violated");
-                "sim_time_ms,dag_id,task_id,task_type,tier,datacenter_id,vm_id,ready_ms,scheduled_ms,start_ms,finish_ms,ready_wait_ms,latency_ms,queue_wait_ms,network_ms,bw_cost,cpu_cost,actual_cost,cost_source,cost_so_far,budget,latency_term,cost_term,budget_penalty,reward,budget_violated");
+                "sim_time_ms,dag_id,task_id,task_type,tier,datacenter_id,vm_id,ready_ms,scheduled_ms,start_ms,finish_ms,ready_wait_ms,latency_ms,queue_wait_ms,network_ms,selected_dc_vm_count,selected_dc_queue_len,selected_dc_avg_queue_len,selected_dc_max_queue_len,selected_dc_avg_utilization,estimated_latency_ms,estimated_cost,estimated_reward,estimate_latency_error_ms,estimate_cost_error,estimate_reward_error,estimate_upload_ms,estimate_execution_ms,estimate_download_ms,estimate_vm_active_cloudlets,bw_cost,cpu_cost,actual_cost,cost_source,cost_so_far,budget,latency_term,cost_term,budget_penalty,reward,budget_violated");
         rewardLogWriter.flush();
     }
 
@@ -899,6 +968,10 @@ public class DagRuntimeManager extends SimEntity {
     }
 
     private double[] estimateCloudletCost(Task cloudlet) {
+        return estimateCloudletCost(cloudlet, cloudlet.getActualCPUTime());
+    }
+
+    private double[] estimateCloudletCost(Task cloudlet, double cpuTimeSec) {
         int datacenterId = cloudlet.getAssociatedDatacenterId();
         if (datacenterId == SimSettings.CLOUD_DATACENTER_ID) {
             datacenterId = SimManager.getInstance().getCloudServerManager().getDatacenter().getId();
@@ -914,7 +987,7 @@ public class DagRuntimeManager extends SimEntity {
 
         double totalBytes = cloudlet.getCloudletFileSize() + cloudlet.getCloudletOutputSize();
         double bwCost = Math.max(0.0, totalBytes * costPerBw);
-        double cpuCost = Math.max(0.0, cloudlet.getActualCPUTime() * costPerSec);
+        double cpuCost = Math.max(0.0, cpuTimeSec * costPerSec);
 
         double vmRam = (cloudlet.getAssociatedDatacenterId() == SimSettings.CLOUD_DATACENTER_ID)
                 ? SimSettings.getInstance().getRamForCloudVM()
@@ -929,13 +1002,21 @@ public class DagRuntimeManager extends SimEntity {
     //         double bwCost, double cpuCost, String costSource, double costSoFar, double latencyTerm, double costTerm,
     //         double budgetPenaltyApplied, double reward, boolean budgetViolated) {
     private void logRewardBreakdown(TaskRecord task, DagRecord dag, double actualLatency, double readyWaitMs,
-            double actualCost, double bwCost, double cpuCost, String costSource, double costSoFar,
+            double actualCost, double bwCost, double cpuCost, String costSource, RemoteRLPolicy.DecisionTrace trace,
+            EstimatedReward estimate,
+            double costSoFar,
             double latencyTerm, double costTerm, double budgetPenaltyApplied, double reward, boolean budgetViolated) {
         if (rewardLogWriter == null || task == null || dag == null) {
             return;
         }
 
         SimSettings ss = SimSettings.getInstance();
+        double estimatedLatency = estimate != null ? estimate.latencyMs : -1.0;
+        double estimatedCost = estimate != null ? estimate.cost : -1.0;
+        double estimatedReward = estimate != null ? estimate.reward : 0.0;
+        double latencyError = estimate != null ? actualLatency - estimate.latencyMs : 0.0;
+        double costError = estimate != null ? actualCost - estimate.cost : 0.0;
+        double rewardError = estimate != null ? reward - estimate.reward : 0.0;
         rewardLogWriter.println(String.join(",",
                 String.format("%.2f", CloudSim.clock() * 1000.0),
                 dag.getDagId(),
@@ -952,6 +1033,21 @@ public class DagRuntimeManager extends SimEntity {
                 String.format("%.2f", actualLatency),
                 String.format("%.2f", task.getQueueDelayMs()),
                 String.format("%.2f", task.getNetworkDelayMs()),
+                String.valueOf(trace != null ? trace.selectedDcVmCount : -1),
+                String.valueOf(trace != null ? trace.selectedDcQueueLen : -1),
+                String.format("%.6f", trace != null ? trace.selectedDcAvgQueueLen : -1.0),
+                String.format("%.6f", trace != null ? trace.selectedDcMaxQueueLen : -1.0),
+                String.format("%.6f", trace != null ? trace.selectedDcAvgUtilization : -1.0),
+                String.format("%.2f", estimatedLatency),
+                String.format("%.12f", estimatedCost),
+                String.format("%.12f", estimatedReward),
+                String.format("%.2f", latencyError),
+                String.format("%.12f", costError),
+                String.format("%.12f", rewardError),
+                String.format("%.2f", estimate != null ? estimate.uploadDelayMs : -1.0),
+                String.format("%.2f", estimate != null ? estimate.executionMs : -1.0),
+                String.format("%.2f", estimate != null ? estimate.downloadDelayMs : -1.0),
+                String.valueOf(estimate != null ? estimate.vmActiveCloudletsAtEstimate : -1),
                 String.format("%.12f", bwCost),
                 String.format("%.12f", cpuCost),
                 String.format("%.12f", actualCost),
