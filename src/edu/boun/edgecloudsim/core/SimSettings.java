@@ -116,7 +116,9 @@ public class SimSettings {
 	// Simulation scenario and policy configuration
 	private String[] SIMULATION_SCENARIOS;
 	private String[] ORCHESTRATOR_POLICIES;
+	private String MOBILITY_MODEL;
 	private String RL_SERVICE_URL;
+	private String RL_REWARD_MODE;
 	private String DAG_INPUT_PATH;
 	private int RL_HTTP_TIMEOUT_MS;
 	private boolean RL_TRAINING_MODE;
@@ -263,8 +265,10 @@ public class SimSettings {
 			ORCHESTRATOR_POLICIES = prop.getProperty("orchestrator_policies").split(",");
 
 			SIMULATION_SCENARIOS = prop.getProperty("simulation_scenarios").split(",");
+			MOBILITY_MODEL = prop.getProperty("mobility_model", "nomadic").trim().toLowerCase();
 			RL_SERVICE_URL = prop.getProperty("rl_service_url",
 					prop.getProperty("rl_server_url", "http://localhost:8000"));
+			RL_REWARD_MODE = prop.getProperty("rl_reward_mode", "actual").trim().toLowerCase();
 			DAG_INPUT_PATH = prop.getProperty("dag_input_path", "").trim();
 			RL_HTTP_TIMEOUT_MS = Integer.parseInt(prop.getProperty("http_timeout_ms", "5000"));
 			RL_TRAINING_MODE = Boolean.parseBoolean(prop.getProperty("training_mode", "true"));
@@ -607,8 +611,20 @@ public class SimSettings {
 		return ORCHESTRATOR_POLICIES;
 	}
 
+	public String getMobilityModel() {
+		return MOBILITY_MODEL;
+	}
+
 	public String getRlServiceUrl() {
 		return RL_SERVICE_URL;
+	}
+
+	public String getRlRewardMode() {
+		return RL_REWARD_MODE;
+	}
+
+	public boolean useEstimatedRlReward() {
+		return "estimated".equalsIgnoreCase(RL_REWARD_MODE);
 	}
 
 	public String getDagInputPath() {

@@ -44,6 +44,7 @@ public class DagRuntimeManager extends SimEntity {
     private Map<Long, String[]> cloudletToDagMap = new HashMap<>();
     private Map<String, Double> dagCostSoFar = new HashMap<>();
     private Map<String, EstimatedReward> estimatedRewardsByTask = new HashMap<>();
+    private Map<String, Double> reservedVmsMap = new HashMap<>();
 
     // Singleton instance for global callbacks
     private static DagRuntimeManager instance = null;
@@ -71,16 +72,27 @@ public class DagRuntimeManager extends SimEntity {
     private boolean rlDecisionInFlight = false;
     private final java.util.Queue<TaskRecord> pendingReadyTasks = new java.util.LinkedList<>();
 
+    // Extra estimate fields are logged to explain how the immediate reward was produced.
     private static class EstimatedReward {
         double latencyMs;
         double cost;
         double latencyTerm;
         double costTerm;
         double reward;
-        double uploadDelayMs;
-        double executionMs;
-        double downloadDelayMs;
-        int vmActiveCloudletsAtEstimate;
+        double uploadMs;
+        double execMs;
+        double downloadMs;
+        int activeCloudlets;
+        double dcArrivalMs;
+        int vmId;
+        double vmAvailableMs;
+        double vmStartMs;
+        double vmFinishMs;
+        double dcWaitMs;
+        double responseDoneMs;
+        double endToEndLatencyMs;
+        boolean sentToAgent;
+        RemoteRLPolicy.DecisionTrace trace;
     }
 
     public DagRuntimeManager(String name, List<DagRecord> dags) {
@@ -120,6 +132,10 @@ public class DagRuntimeManager extends SimEntity {
 
     public double getDagCostSoFar(String dagId) {
         return dagCostSoFar.getOrDefault(dagId, 0.0);
+    }
+
+    public double getReservedVmAvailableAtMs(int datacenterId, int vmId) {
+        return reservedVmsMap.getOrDefault(vmReservationKey(datacenterId, vmId), 0.0);
     }
 
     public void scheduleAllDagSubmissions() {
@@ -191,8 +207,9 @@ public class DagRuntimeManager extends SimEntity {
             boolean wasEmpty = pendingReadyTasks.isEmpty();
             pendingReadyTasks.add(task);
 
-            // If queue was empty, ensure a future event will retry
-            CloudSim.send(getId(), this.getId(), 0.01, TASK_READY, null);
+            if (wasEmpty) {
+                CloudSim.send(getId(), this.getId(), 0.01, TASK_READY, null);
+            }
             return;
         }
 
@@ -232,81 +249,6 @@ public class DagRuntimeManager extends SimEntity {
         dagsWithScheduledTasks.add(dagId);
     }
 
-    // private void processTaskReady(TaskRecord task) {
-    //     String dagId = findDagIdForTask(task);
-    //     DagRecord dag = activeDags.get(dagId);
-
-    //     if (dag == null) {
-    //         System.err.println("ERROR: DAG not found for task " + task.getTaskId());
-    //         return;
-    //     }
-
-    //     double readyTime = CloudSim.clock();
-    //     task.setState(TaskRecord.TaskState.SCHEDULED);
-    //     task.setScheduledTimeMs(readyTime * 1000.0);
-
-    //     // Convert TaskRecord to TaskProperty and send to SimManager so it follows
-    //     // normal submission path
-    //     SimSettings ss = SimSettings.getInstance();
-
-    //     // Compute task length in MI using cloud VM MIPS as baseline (so MI is
-    //     // independent of target)
-    //     long lengthMi = (long) (task.getDurationMs() * ss.getMipsForCloudVM() / 1000.0);
-    //     if (lengthMi <= 0)
-    //         lengthMi = 1;
-
-    //     // Projected execution times on edge and cloud (seconds)
-    //     double execSecCloud = lengthMi / (double) ss.getMipsForCloudVM();
-    //     double execSecEdge = lengthMi / (double) ss.getMipsForMobileVM();
-
-    //     int taskTypeIdx = ss.getTaskTypeIndex(task.getTaskType());
-    //     if (taskTypeIdx == -1) {
-    //         System.err.println("WARNING: Task type " + task.getTaskType()
-    //                 + " not found in applications XML. Using default index 0.");
-    //         taskTypeIdx = 0;
-    //     }
-
-    //     // Get realistic input/output sizes from applications XML (KB to Bytes)
-    //     double[] appProps = ss.getTaskLookUpTable()[taskTypeIdx];
-    //     long inputBytes = (long) (appProps[5] * 1024.0);
-    //     long outputBytes = (long) (appProps[6] * 1024.0);
-
-    //     // Fallback for safety
-    //     if (inputBytes <= 0)
-    //         inputBytes = 1024;
-    //     if (outputBytes <= 0)
-    //         outputBytes = 1024;
-
-    //     int pes = 1;
-
-    //     // Map DAG task to a real mobile device (round-robin across 0 to numDevices-1)
-    //     // This ensures the task is submitted with a valid device ID for mobility lookup
-    //     int numDevices = SimSettings.getInstance().getMaxNumOfMobileDev();
-    //     int taskHashCode = task.getTaskId().hashCode();
-    //     int mobileDeviceId = Math.abs(taskHashCode) % numDevices;
-
-    //     // Create TaskProperty with estimated sizes and MI, attach DAG identifiers
-    //     TaskProperty tp = new TaskProperty(readyTime, mobileDeviceId, taskTypeIdx, pes, lengthMi, inputBytes,
-    //             outputBytes, dagId, task.getTaskId());
-
-    //     // Register this task in our DAG task registry so we can track it when it
-    //     // completes
-    //     dagTaskRegistry.computeIfAbsent(dagId, k -> new HashMap<>())
-    //             .put(task.getTaskId(), new long[] { lengthMi, mobileDeviceId, (long) (readyTime * 1000.0) });
-
-    //     // Send as CREATE_TASK event to SimManager (CREATE_TASK tag = 0)
-
-    //     // Log scheduling estimate
-    //     String appName = (dag != null) ? dag.getApplicationName() : "Unknown_App";
-    //     System.out.println(String.format(
-    //             "[%s] [%.2f] Task ready: %s of DAG %s — lengthMI=%d, execEdge=%.3fs, execCloud=%.3fs, in=%dB out=%dB",
-    //             appName, CloudSim.clock(), task.getTaskId(), dagId, lengthMi, execSecEdge, execSecCloud, inputBytes,
-    //             outputBytes));
-
-    //     CloudSim.send(getId(), SimManager.getInstance().getId(), 0.0, 0, tp);
-    //     dagsWithScheduledTasks.add(dagId);
-    // }
-
     /**
      * Register mapping from CloudSim cloudlet id to DAG identifiers so we can
      * find the corresponding TaskRecord when the cloudlet finishes.
@@ -317,36 +259,49 @@ public class DagRuntimeManager extends SimEntity {
         }
     }
 
-    public void recordEstimatedReward(Task cloudlet, double vmMips, int vmActiveCloudletsAtEstimate,
+    public double recordEstimatedReward(Task cloudlet, double vmMips, int activeCloudlets,
             double uploadDelaySec, double downloadDelaySec) {
         if (cloudlet == null || cloudlet.getDagId() == null || cloudlet.getDagTaskId() == null) {
-            return;
+            return 0.0;
         }
 
         DagRecord dag = activeDags.get(cloudlet.getDagId());
         if (dag == null) {
-            return;
+            return 0.0;
         }
         TaskRecord task = dag.getTask(cloudlet.getDagTaskId());
         if (task == null) {
-            return;
+            return 0.0;
         }
 
-        double elapsedBeforeVmMs = Math.max(0.0, CloudSim.clock() * 1000.0 - task.getScheduledTimeMs());
         double safeVmMips = Math.max(1e-9, vmMips);
         double baseExecutionSec = cloudlet.getCloudletLength() / safeVmMips;
-        double timeSharedFactor = Math.max(1, vmActiveCloudletsAtEstimate + 1);
-        double estimatedExecutionSec = baseExecutionSec * timeSharedFactor;
+        double estimatedExecutionSec = baseExecutionSec;
         double estimatedDownloadSec = Math.max(0.0, downloadDelaySec);
+        double dcArrivalMs = CloudSim.clock() * 1000.0;
+        String reservationKey = vmReservationKey(cloudlet.getAssociatedDatacenterId(), cloudlet.getAssociatedVmId());
+        double vmAvailableMs = reservedVmsMap.getOrDefault(reservationKey, 0.0);
+        double vmStartMs = Math.max(dcArrivalMs, vmAvailableMs);
+        double vmFinishMs = vmStartMs + estimatedExecutionSec * 1000.0;
 
         EstimatedReward estimate = new EstimatedReward();
-        estimate.uploadDelayMs = Math.max(0.0, uploadDelaySec) * 1000.0;
-        estimate.executionMs = estimatedExecutionSec * 1000.0;
-        estimate.downloadDelayMs = estimatedDownloadSec * 1000.0;
-        estimate.latencyMs = elapsedBeforeVmMs + estimate.executionMs + estimate.downloadDelayMs;
+        estimate.uploadMs = Math.max(0.0, uploadDelaySec) * 1000.0;
+        estimate.execMs = estimatedExecutionSec * 1000.0;
+        estimate.downloadMs = estimatedDownloadSec * 1000.0;
         double[] estimatedCosts = estimateCloudletCost(cloudlet, estimatedExecutionSec);
         estimate.cost = estimatedCosts[0] + estimatedCosts[1];
-        estimate.vmActiveCloudletsAtEstimate = vmActiveCloudletsAtEstimate;
+        estimate.activeCloudlets = activeCloudlets;
+        estimate.dcArrivalMs = dcArrivalMs;
+        estimate.vmId = cloudlet.getAssociatedVmId();
+        estimate.vmAvailableMs = vmAvailableMs;
+        estimate.vmStartMs = vmStartMs;
+        estimate.vmFinishMs = vmFinishMs;
+        estimate.dcWaitMs = Math.max(0.0, vmStartMs - dcArrivalMs);
+        estimate.responseDoneMs = vmFinishMs + estimate.downloadMs;
+        estimate.endToEndLatencyMs = Math.max(0.0,
+                estimate.responseDoneMs - task.getScheduledTimeMs());
+        estimate.latencyMs = estimate.endToEndLatencyMs;
+        reservedVmsMap.put(reservationKey, vmFinishMs);
 
         SimSettings ss = SimSettings.getInstance();
         estimate.latencyTerm = ss.getRlAlphaL() * normalizeRewardComponent(
@@ -367,6 +322,11 @@ public class DagRuntimeManager extends SimEntity {
         }
 
         estimatedRewardsByTask.put(taskKey(cloudlet.getDagId(), cloudlet.getDagTaskId()), estimate);
+
+        if (ss.useEstimatedRlReward() && !isOnlyRemainingActiveTask(task)) {
+            postEstimatedObservation(cloudlet, task, dag, estimate);
+        }
+        return estimate.dcWaitMs;
     }
 
     /**
@@ -445,7 +405,13 @@ public class DagRuntimeManager extends SimEntity {
         //Timer for latency starts task scheduled using RL agent action
         double readyWaitMs = Math.max(0.0, task.getScheduledTimeMs() - task.getReadyTimeMs());
         double actualLatency = Math.max(0.0, task.getFinishTimeMs() - task.getScheduledTimeMs());
-        double newCostSoFar = dagCostSoFar.getOrDefault(dagId, 0.0) + actualCost;
+        EstimatedReward estimate = estimatedRewardsByTask.remove(taskKey(dagId, taskId));
+        boolean observationAlreadyPosted = estimate != null && estimate.sentToAgent;
+        double previousCostSoFar = dagCostSoFar.getOrDefault(dagId, 0.0);
+        if (observationAlreadyPosted) {
+            previousCostSoFar = Math.max(0.0, previousCostSoFar - estimate.cost);
+        }
+        double newCostSoFar = previousCostSoFar + actualCost;
         dagCostSoFar.put(dagId, newCostSoFar);
 
         SimSettings ss = SimSettings.getInstance();
@@ -469,8 +435,12 @@ public class DagRuntimeManager extends SimEntity {
             reward += budgetPenaltyApplied;
         }
         RemoteRLPolicy.DecisionTrace trace = RemoteRLPolicy.consumeTrace(dagId, taskId);
-        EstimatedReward estimate = estimatedRewardsByTask.remove(taskKey(dagId, taskId));
-        updateRewardSummary(latencyTerm, costTerm, reward);
+        if (trace == null && estimate != null) {
+            trace = estimate.trace;
+        }
+        if (!observationAlreadyPosted) {
+            updateRewardSummary(latencyTerm, costTerm, reward);
+        }
         logRewardBreakdown(task, dag, actualLatency, readyWaitMs, actualCost, bwCost, cpuCost, costSource, trace, estimate,
                 newCostSoFar, latencyTerm, costTerm, budgetPenaltyApplied, reward, budgetViolated);
 
@@ -478,45 +448,27 @@ public class DagRuntimeManager extends SimEntity {
 
         boolean done = activeDags.isEmpty() && (dagsArrivedCount >= allDags.size());
 
-        // boolean done = !activeDags.containsKey(dagId);
         DagRecord nextDag = done ? null : findAnyActiveDagWithPendingTask();
-        TaskRecord nextPendingTask = done ? null : findAnyPendingTaskAcrossActiveDags();
-        
-        // TaskContext nextTaskCtx = buildTaskContextForNextState(dag, done ? null : findAnyPendingTask(dag), task);
-        TaskContext nextTaskCtx = buildTaskContextForNextState(nextDag, nextPendingTask, task);
-        ClusterState nextClusterState = DagAwareOrchestrator.buildClusterStateSnapshot();
-        double nextCostSoFar = 0.0;
-        if (!done && nextDag != null) {
-            nextCostSoFar = dagCostSoFar.getOrDefault(nextDag.getDagId(), 0.0);
-        }
+        double nextCostSoFar = (!done && nextDag != null)
+                ? dagCostSoFar.getOrDefault(nextDag.getDagId(), 0.0)
+                : 0.0;
+        JsonObject nextState = buildNextStateJson(done, task, nextCostSoFar);
 
-        JsonObject nextState = RemoteRLPolicy.buildStateJson(
-                nextTaskCtx,
-                nextClusterState,
-                nextCostSoFar,
-                // dagCostSoFar.getOrDefault(dagId, newCostSoFar),
-                ss.getRlBudgetCost(),
-                getActiveDagsCount());
+        if (!observationAlreadyPosted) {
+            RemoteRLPolicy.postObservation(
+                    ss.getRlServiceUrl(),
+                    ss.getRlHttpTimeoutMs(),
+                    trace,
+                    nextState,
+                    reward,
+                    done,
+                    actualLatency,
+                    actualCost,
+                    nextCostSoFar,
+                    ss.getRlBudgetCost(),
+                    budgetViolated);
 
-        RemoteRLPolicy.postObservation(
-                ss.getRlServiceUrl(),
-                ss.getRlHttpTimeoutMs(),
-                trace,
-                nextState,
-                reward,
-                done,
-                actualLatency,
-                actualCost,
-                nextCostSoFar,
-                // dagCostSoFar.getOrDefault(dagId, newCostSoFar),
-                ss.getRlBudgetCost(),
-                budgetViolated);
-        
-        rlDecisionInFlight = false;
-
-        if (!pendingReadyTasks.isEmpty()) {
-            TaskRecord nextTask = pendingReadyTasks.poll();
-            processTaskReady(nextTask);
+            releaseRlDecisionPipeline();
         }
         // cleanup mapping
         cloudletToDagMap.remove(cloudletId);
@@ -567,17 +519,18 @@ public class DagRuntimeManager extends SimEntity {
  
         // Send penalty observation to Python if an RL trace was stored for this task
         RemoteRLPolicy.DecisionTrace trace = RemoteRLPolicy.consumeTrace(dagId, taskId);
-        if (trace != null) {
+        EstimatedReward estimate = estimatedRewardsByTask.remove(taskKey(dagId, taskId));
+        boolean observationAlreadyPosted = estimate != null && estimate.sentToAgent;
+        if (trace == null && estimate != null) {
+            trace = estimate.trace;
+        }
+        if (!observationAlreadyPosted && trace != null) {
             SimSettings ss = SimSettings.getInstance();
             boolean done = activeDags.isEmpty() && (dagsArrivedCount >= allDags.size());
             DagRecord nextDag = done ? null : findAnyActiveDagWithPendingTask();
-            TaskRecord nextPending = done ? null : findAnyPendingTaskAcrossActiveDags();
-            TaskContext nextCtx = buildTaskContextForNextState(nextDag, nextPending, null);
-            ClusterState nextCluster = DagAwareOrchestrator.buildClusterStateSnapshot();
             double nextCost = (!done && nextDag != null)
                 ? dagCostSoFar.getOrDefault(nextDag.getDagId(), 0.0) : 0.0;
-            JsonObject nextState = RemoteRLPolicy.buildStateJson(
-                nextCtx, nextCluster, nextCost, ss.getRlBudgetCost(), getActiveDagsCount());
+            JsonObject nextState = buildNextStateJson(done, null, nextCost);
  
             // Apply a large latency penalty for the failed task
             double penalty = ss.getRlBudgetPenalty();
@@ -591,11 +544,8 @@ public class DagRuntimeManager extends SimEntity {
                 false);
         }
  
-        // Unblock the scheduling pipeline
-        rlDecisionInFlight = false;
-        if (!pendingReadyTasks.isEmpty()) {
-            TaskRecord nextTask = pendingReadyTasks.poll();
-            processTaskReady(nextTask);
+        if (!observationAlreadyPosted) {
+            releaseRlDecisionPipeline();
         }
     }
 
@@ -683,6 +633,90 @@ public class DagRuntimeManager extends SimEntity {
 
     private String taskKey(String dagId, String taskId) {
         return dagId + "::" + taskId;
+    }
+
+    private void postEstimatedObservation(Task cloudlet, TaskRecord task, DagRecord dag, EstimatedReward estimate) {
+        String dagId = cloudlet.getDagId();
+        String taskId = cloudlet.getDagTaskId();
+        RemoteRLPolicy.DecisionTrace trace = RemoteRLPolicy.consumeTrace(dagId, taskId);
+        if (trace == null) {
+            return;
+        }
+
+        estimate.trace = trace;
+        estimate.sentToAgent = true;
+
+        double newCostSoFar = dagCostSoFar.getOrDefault(dagId, 0.0) + estimate.cost;
+        dagCostSoFar.put(dagId, newCostSoFar);
+        updateRewardSummary(estimate.latencyTerm, estimate.costTerm, estimate.reward);
+
+        SimSettings ss = SimSettings.getInstance();
+        boolean budgetViolated = newCostSoFar > ss.getRlBudgetCost();
+        DagRecord nextDag = findAnyActiveDagWithPendingTask();
+        double nextCostSoFar = (nextDag != null)
+                ? dagCostSoFar.getOrDefault(nextDag.getDagId(), 0.0)
+                : 0.0;
+        JsonObject nextState = buildNextStateJson(false, task, nextCostSoFar);
+
+        RemoteRLPolicy.postObservation(
+                ss.getRlServiceUrl(),
+                ss.getRlHttpTimeoutMs(),
+                trace,
+                nextState,
+                estimate.reward,
+                false,
+                estimate.latencyMs,
+                estimate.cost,
+                nextCostSoFar,
+                ss.getRlBudgetCost(),
+                budgetViolated);
+
+        releaseRlDecisionPipeline();
+    }
+
+    private boolean isOnlyRemainingActiveTask(TaskRecord candidate) {
+        if (dagsArrivedCount < allDags.size()) {
+            return false;
+        }
+
+        int unfinished = 0;
+        for (DagRecord dag : activeDags.values()) {
+            for (TaskRecord task : dag.getTasksById().values()) {
+                if (task.getState() != TaskRecord.TaskState.DONE) {
+                    unfinished++;
+                    if (unfinished > 1) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return unfinished == 1 && candidate != null && candidate.getState() != TaskRecord.TaskState.DONE;
+    }
+
+    private void releaseRlDecisionPipeline() {
+        rlDecisionInFlight = false;
+        if (!pendingReadyTasks.isEmpty()) {
+            TaskRecord nextTask = pendingReadyTasks.poll();
+            processTaskReady(nextTask);
+        }
+    }
+
+    private String vmReservationKey(int datacenterId, int vmId) {
+        return datacenterId + "::" + vmId;
+    }
+
+    private JsonObject buildNextStateJson(boolean done, TaskRecord fallbackTask, double nextCostSoFar) {
+        DagRecord nextDag = done ? null : findAnyActiveDagWithPendingTask();
+        TaskRecord nextPendingTask = done ? null : findAnyPendingTaskAcrossActiveDags();
+        TaskContext nextTaskCtx = buildTaskContextForNextState(nextDag, nextPendingTask, fallbackTask);
+        ClusterState nextClusterState = DagAwareOrchestrator.buildClusterStateSnapshot();
+        SimSettings ss = SimSettings.getInstance();
+        return RemoteRLPolicy.buildStateJson(
+                nextTaskCtx,
+                nextClusterState,
+                nextCostSoFar,
+                ss.getRlBudgetCost(),
+                getActiveDagsCount());
     }
 
     private TaskRecord findAnyPendingTask(DagRecord dag) {
@@ -831,7 +865,7 @@ public class DagRuntimeManager extends SimEntity {
     private void writeRewardLogHeader() {
         rewardLogWriter.println(
                 // "sim_time_ms,dag_id,task_id,task_type,tier,datacenter_id,vm_id,ready_ms,scheduled_ms,start_ms,finish_ms,latency_ms,queue_wait_ms,network_ms,bw_cost,cpu_cost,actual_cost,cost_source,cost_so_far,budget,latency_term,cost_term,budget_penalty,reward,budget_violated");
-                "sim_time_ms,dag_id,task_id,task_type,tier,datacenter_id,vm_id,ready_ms,scheduled_ms,start_ms,finish_ms,ready_wait_ms,latency_ms,queue_wait_ms,network_ms,selected_dc_vm_count,selected_dc_queue_len,selected_dc_avg_queue_len,selected_dc_max_queue_len,selected_dc_avg_utilization,estimated_latency_ms,estimated_cost,estimated_reward,estimate_latency_error_ms,estimate_cost_error,estimate_reward_error,estimate_upload_ms,estimate_execution_ms,estimate_download_ms,estimate_vm_active_cloudlets,bw_cost,cpu_cost,actual_cost,cost_source,cost_so_far,budget,latency_term,cost_term,budget_penalty,reward,budget_violated");
+                "sim_time_ms,dag_id,task_id,task_type,tier,datacenter_id,vm_id,ready_ms,scheduled_ms,start_ms,finish_ms,ready_wait_ms,latency_ms,queue_wait_ms,network_ms,selected_dc_vm_count,selected_dc_queue_len,selected_dc_avg_queue_len,selected_dc_max_queue_len,selected_dc_avg_utilization,estimated_latency_ms,estimated_cost,estimated_reward,estimate_latency_error_ms,estimate_cost_error,estimate_reward_error,estimate_upload_ms,estimate_execution_ms,estimate_download_ms,estimate_vm_active_cloudlets,dc_queue_arrival_ms,reserved_vm_id,reserved_vm_available_before_ms,reserved_vm_start_ms,reserved_vm_finish_ms,reserved_dc_wait_ms,reserved_estimated_response_done_ms,reserved_estimated_latency_ms,bw_cost,cpu_cost,actual_cost,cost_source,cost_so_far,budget,latency_term,cost_term,budget_penalty,reward,budget_violated");
         rewardLogWriter.flush();
     }
 
@@ -1044,10 +1078,18 @@ public class DagRuntimeManager extends SimEntity {
                 String.format("%.2f", latencyError),
                 String.format("%.12f", costError),
                 String.format("%.12f", rewardError),
-                String.format("%.2f", estimate != null ? estimate.uploadDelayMs : -1.0),
-                String.format("%.2f", estimate != null ? estimate.executionMs : -1.0),
-                String.format("%.2f", estimate != null ? estimate.downloadDelayMs : -1.0),
-                String.valueOf(estimate != null ? estimate.vmActiveCloudletsAtEstimate : -1),
+                String.format("%.2f", estimate != null ? estimate.uploadMs : -1.0),
+                String.format("%.2f", estimate != null ? estimate.execMs : -1.0),
+                String.format("%.2f", estimate != null ? estimate.downloadMs : -1.0),
+                String.valueOf(estimate != null ? estimate.activeCloudlets : -1),
+                String.format("%.2f", estimate != null ? estimate.dcArrivalMs : -1.0),
+                String.valueOf(estimate != null ? estimate.vmId : -1),
+                String.format("%.2f", estimate != null ? estimate.vmAvailableMs : -1.0),
+                String.format("%.2f", estimate != null ? estimate.vmStartMs : -1.0),
+                String.format("%.2f", estimate != null ? estimate.vmFinishMs : -1.0),
+                String.format("%.2f", estimate != null ? estimate.dcWaitMs : -1.0),
+                String.format("%.2f", estimate != null ? estimate.responseDoneMs : -1.0),
+                String.format("%.2f", estimate != null ? estimate.endToEndLatencyMs : -1.0),
                 String.format("%.12f", bwCost),
                 String.format("%.12f", cpuCost),
                 String.format("%.12f", actualCost),

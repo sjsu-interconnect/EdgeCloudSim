@@ -4,6 +4,7 @@ import org.cloudbus.cloudsim.Vm;
 import edu.boun.edgecloudsim.core.SimManager;
 import edu.boun.edgecloudsim.core.SimSettings;
 import edu.boun.edgecloudsim.edge_client.Task;
+import edu.boun.edgecloudsim.dagsim.DagRuntimeManager;
 import edu.boun.edgecloudsim.dagsim.scheduling.*;
 import edu.boun.edgecloudsim.cloud_server.CloudVM;
 import edu.boun.edgecloudsim.edge_server.EdgeVM;
@@ -30,15 +31,6 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         // Initialization if needed
     }
 
-    // @Override
-    // public int getDeviceToOffload(Task task) {
-    //     PlacementDecision decision = getPolicyDecision(task);
-    //     if (decision.destTier == PlacementDecision.TIER_CLOUD) {
-    //         return SimSettings.CLOUD_DATACENTER_ID;
-    //     } else {
-    //         return SimSettings.GENERIC_EDGE_DEVICE_ID;
-    //     }
-    // }
     @Override
     public int getDeviceToOffload(Task task) {
         PlacementDecision decision = getOrCreatePolicyDecision(task);
@@ -50,35 +42,6 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         }
     }
 
-    // @Override
-    // public Vm getVmToOffload(Task task, int deviceId) {
-    //     PlacementDecision decision = getPolicyDecision(task);
-
-    //     if (decision.destTier == PlacementDecision.TIER_CLOUD) {
-    //         // Retrieve cloud VM
-    //         List<CloudVM> vms = SimManager.getInstance().getCloudServerManager().getVmList(decision.destDatacenterId);
-    //         for (CloudVM vm : vms) {
-    //             if (vm.getId() == decision.destVmId) {
-    //                 return vm;
-    //             }
-    //         }
-    //         if (decision.destVmId >= 0 && decision.destVmId < vms.size()) { // backward-compatible index fallback
-    //             return vms.get(decision.destVmId);
-    //         }
-    //     } else {
-    //         // Retrieve edge VM
-    //         List<EdgeVM> vms = SimManager.getInstance().getEdgeServerManager().getVmList(decision.destDatacenterId);
-    //         for (EdgeVM vm : vms) {
-    //             if (vm.getId() == decision.destVmId) {
-    //                 return vm;
-    //             }
-    //         }
-    //         if (decision.destVmId >= 0 && decision.destVmId < vms.size()) { // backward-compatible index fallback
-    //             return vms.get(decision.destVmId);
-    //         }
-    //     }
-    //     return null;
-    // }
     @Override
     public Vm getVmToOffload(Task task, int deviceId) {
         PlacementDecision decision = getOrCreatePolicyDecision(task);
@@ -89,14 +52,14 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
                         .getCloudServerManager()
                         .getVmList(decision.destDatacenterId);
 
-                Vm selected = selectVmForDatacenter(vms, decision.destVmId);
+                Vm selected = selectVmForDatacenter(vms, true);
                 return selected;
             } else {
                 List<EdgeVM> vms = SimManager.getInstance()
                         .getEdgeServerManager()
                         .getVmList(decision.destDatacenterId);
 
-                Vm selected = selectVmForDatacenter(vms, decision.destVmId);
+                Vm selected = selectVmForDatacenter(vms, false);
                 return selected;
             }
         } finally {
@@ -116,33 +79,28 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         return fresh;
     }
 
-    private Vm selectVmForDatacenter(List<? extends Vm> vms, int requestedVmId) {
+    private Vm selectVmForDatacenter(List<? extends Vm> vms, boolean cloudTier) {
         if (vms == null || vms.isEmpty()) {
             return null;
         }
 
-        // If a specific VM id was provided and exists, keep backward compatibility.
-        if (requestedVmId >= 0) {
-            for (Vm vm : vms) {
-                if (vm.getId() == requestedVmId) {
-                    return vm;
-                }
-            }
-
-            if (requestedVmId < vms.size()) {
-                return vms.get(requestedVmId);
-            }
-        }
-
-        // Deterministic fallback: first available / least loaded VM.
         Vm best = null;
-        int bestQueue = Integer.MAX_VALUE;
+        double bestReservedAvailableAtMs = Double.POSITIVE_INFINITY;
 
         for (Vm vm : vms) {
-            int queueLen = vm.getCloudletScheduler().getCloudletExecList().size();
-            if (best == null || queueLen < bestQueue) {
+            int reservationDatacenterId = cloudTier
+                    ? SimSettings.CLOUD_DATACENTER_ID
+                    : vm.getHost().getDatacenter().getId();
+            double reservedAvailableAtMs = 0.0;
+            DagRuntimeManager drm = DagRuntimeManager.getInstance();
+            if (drm != null) {
+                reservedAvailableAtMs = drm.getReservedVmAvailableAtMs(reservationDatacenterId, vm.getId());
+            }
+            if (best == null
+                    || reservedAvailableAtMs < bestReservedAvailableAtMs
+                    || (reservedAvailableAtMs == bestReservedAvailableAtMs && vm.getId() < best.getId())) {
                 best = vm;
-                bestQueue = queueLen;
+                bestReservedAvailableAtMs = reservedAvailableAtMs;
             }
         }
 
