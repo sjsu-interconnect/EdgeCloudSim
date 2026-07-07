@@ -188,7 +188,7 @@ public class DagRuntimeManager extends SimEntity {
     }
     private void processTaskReady(TaskRecord task) {
         if (task == null) {
-            if (!rlDecisionInFlight && !pendingReadyTasks.isEmpty()) {
+            if (usesRemoteRlPolicy() && !rlDecisionInFlight && !pendingReadyTasks.isEmpty()) {
                 TaskRecord nextTask = pendingReadyTasks.poll();
                 processTaskReady(nextTask);
             }
@@ -202,8 +202,9 @@ public class DagRuntimeManager extends SimEntity {
             return;
         }
 
-        // If RL is busy → queue task
-        if (rlDecisionInFlight) {
+        // Remote RL has a Gymnasium step handshake. Other policies should not
+        // block scheduling and can dispatch ready tasks immediately.
+        if (usesRemoteRlPolicy() && rlDecisionInFlight) {
             boolean wasEmpty = pendingReadyTasks.isEmpty();
             pendingReadyTasks.add(task);
 
@@ -213,7 +214,9 @@ public class DagRuntimeManager extends SimEntity {
             return;
         }
 
-        rlDecisionInFlight = true;
+        if (usesRemoteRlPolicy()) {
+            rlDecisionInFlight = true;
+        }
 
         double readyTime = CloudSim.clock();
         task.setState(TaskRecord.TaskState.SCHEDULED);
@@ -222,17 +225,25 @@ public class DagRuntimeManager extends SimEntity {
         SimSettings ss = SimSettings.getInstance();
 
         long lengthMi = (long) (task.getDurationMs() * ss.getMipsForCloudVM() / 1000.0);
-        if (lengthMi <= 0) lengthMi = 1;
+        if (lengthMi <= 0) {
+            lengthMi = 1;
+        }
 
         int taskTypeIdx = ss.getTaskTypeIndex(task.getTaskType());
-        if (taskTypeIdx == -1) taskTypeIdx = 0;
+        if (taskTypeIdx == -1) {
+            taskTypeIdx = 0;
+        }
 
         double[] appProps = ss.getTaskLookUpTable()[taskTypeIdx];
         long inputBytes = (long) (appProps[5] * 1024.0);
         long outputBytes = (long) (appProps[6] * 1024.0);
 
-        if (inputBytes <= 0) inputBytes = 1024;
-        if (outputBytes <= 0) outputBytes = 1024;
+        if (inputBytes <= 0) {
+            inputBytes = 1024;
+        }
+        if (outputBytes <= 0) {
+            outputBytes = 1024;
+        }
 
         int numDevices = ss.getMaxNumOfMobileDev();
         int mobileDeviceId = Math.abs(task.getTaskId().hashCode()) % numDevices;
@@ -402,7 +413,7 @@ public class DagRuntimeManager extends SimEntity {
 
         // double actualLatency = Math.max(0.0, task.getFinishTimeMs() - task.getReadyTimeMs());
         
-        //Timer for latency starts task scheduled using RL agent action
+        // Timer for latency starts task scheduled using RL agent action.
         double readyWaitMs = Math.max(0.0, task.getScheduledTimeMs() - task.getReadyTimeMs());
         double actualLatency = Math.max(0.0, task.getFinishTimeMs() - task.getScheduledTimeMs());
         EstimatedReward estimate = estimatedRewardsByTask.remove(taskKey(dagId, taskId));
@@ -481,15 +492,20 @@ public class DagRuntimeManager extends SimEntity {
     public void onTaskFailed(Task cloudlet) {
         long cloudletId = cloudlet.getCloudletId();
         String[] ids = cloudletToDagMap.remove(cloudletId);
-        if (ids == null) return; // not a DAG task
- 
+        if (ids == null) {
+            return; // not a DAG task
+        }
+
         String dagId = ids[0];
         String taskId = ids[1];
- 
+
         DagRecord dag = activeDags.get(dagId);
         if (dag == null) {
             for (DagRecord d : allDags) {
-                if (d.getDagId().equals(dagId)) { dag = d; break; }
+                if (d.getDagId().equals(dagId)) {
+                    dag = d;
+                    break;
+                }
             }
         }
         if (dag != null) {
@@ -498,10 +514,10 @@ public class DagRuntimeManager extends SimEntity {
                 task.setState(TaskRecord.TaskState.DONE);
                 dag.incrementCompletedTasks();
                 System.out.println(String.format(
-                    "[%s] [%.2f] Task FAILED (network): %s of %s (%d/%d)",
-                    dag.getApplicationName(), CloudSim.clock(),
-                    taskId, dagId,
-                    dag.getCompletedTasks(), dag.getTotalTasks()));
+                        "[%s] [%.2f] Task FAILED (network): %s of %s (%d/%d)",
+                        dag.getApplicationName(), CloudSim.clock(),
+                        taskId, dagId,
+                        dag.getCompletedTasks(), dag.getTotalTasks()));
 
                 // Cascade failure to all downstream tasks that can no longer run
                 cascadeFailure(dag, task);
@@ -516,7 +532,7 @@ public class DagRuntimeManager extends SimEntity {
                 }
             }
         }
- 
+
         // Send penalty observation to Python if an RL trace was stored for this task
         RemoteRLPolicy.DecisionTrace trace = RemoteRLPolicy.consumeTrace(dagId, taskId);
         EstimatedReward estimate = estimatedRewardsByTask.remove(taskKey(dagId, taskId));
@@ -529,21 +545,26 @@ public class DagRuntimeManager extends SimEntity {
             boolean done = activeDags.isEmpty() && (dagsArrivedCount >= allDags.size());
             DagRecord nextDag = done ? null : findAnyActiveDagWithPendingTask();
             double nextCost = (!done && nextDag != null)
-                ? dagCostSoFar.getOrDefault(nextDag.getDagId(), 0.0) : 0.0;
+                    ? dagCostSoFar.getOrDefault(nextDag.getDagId(), 0.0)
+                    : 0.0;
             JsonObject nextState = buildNextStateJson(done, null, nextCost);
- 
+
             // Apply a large latency penalty for the failed task
             double penalty = ss.getRlBudgetPenalty();
             RemoteRLPolicy.postObservation(
-                ss.getRlServiceUrl(), ss.getRlHttpTimeoutMs(),
-                trace, nextState,
-                penalty,   // reward: penalty for failure
-                done,
-                0.0, 0.0, // latency/cost unknown for failed task
-                nextCost, ss.getRlBudgetCost(),
-                false);
+                    ss.getRlServiceUrl(),
+                    ss.getRlHttpTimeoutMs(),
+                    trace,
+                    nextState,
+                    penalty,
+                    done,
+                    0.0,
+                    0.0,
+                    nextCost,
+                    ss.getRlBudgetCost(),
+                    false);
         }
- 
+
         if (!observationAlreadyPosted) {
             releaseRlDecisionPipeline();
         }
@@ -604,8 +625,8 @@ public class DagRuntimeManager extends SimEntity {
     }
 
     /**
-    * helper function that marks all tasks in the dag with failed task as done to terminate
-    */
+     * Helper function that marks all tasks in the dag with failed task as done to terminate.
+     */
     private void cascadeFailure(DagRecord dag, TaskRecord failedTask) {
         for (String childId : failedTask.getChildren()) {
             TaskRecord child = dag.getTask(childId);
@@ -699,6 +720,19 @@ public class DagRuntimeManager extends SimEntity {
             TaskRecord nextTask = pendingReadyTasks.poll();
             processTaskReady(nextTask);
         }
+    }
+
+    private boolean usesRemoteRlPolicy() {
+        String[] policies = SimSettings.getInstance().getOrchestratorPolicies();
+        if (policies == null) {
+            return false;
+        }
+        for (String policy : policies) {
+            if ("REMOTE_RL".equalsIgnoreCase(policy != null ? policy.trim() : "")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String vmReservationKey(int datacenterId, int vmId) {
@@ -865,7 +899,7 @@ public class DagRuntimeManager extends SimEntity {
     private void writeRewardLogHeader() {
         rewardLogWriter.println(
                 // "sim_time_ms,dag_id,task_id,task_type,tier,datacenter_id,vm_id,ready_ms,scheduled_ms,start_ms,finish_ms,latency_ms,queue_wait_ms,network_ms,bw_cost,cpu_cost,actual_cost,cost_source,cost_so_far,budget,latency_term,cost_term,budget_penalty,reward,budget_violated");
-                "sim_time_ms,dag_id,task_id,task_type,tier,datacenter_id,vm_id,ready_ms,scheduled_ms,start_ms,finish_ms,ready_wait_ms,latency_ms,queue_wait_ms,network_ms,selected_dc_vm_count,selected_dc_queue_len,selected_dc_avg_queue_len,selected_dc_max_queue_len,selected_dc_avg_utilization,estimated_latency_ms,estimated_cost,estimated_reward,estimate_latency_error_ms,estimate_cost_error,estimate_reward_error,estimate_upload_ms,estimate_execution_ms,estimate_download_ms,estimate_vm_active_cloudlets,dc_queue_arrival_ms,reserved_vm_id,reserved_vm_available_before_ms,reserved_vm_start_ms,reserved_vm_finish_ms,reserved_dc_wait_ms,reserved_estimated_response_done_ms,reserved_estimated_latency_ms,bw_cost,cpu_cost,actual_cost,cost_source,cost_so_far,budget,latency_term,cost_term,budget_penalty,reward,budget_violated");
+                "sim_time_ms,dag_id,task_id,task_type,tier,datacenter_id,vm_id,ready_ms,scheduled_ms,start_ms,finish_ms,ready_wait_ms,latency_ms,queue_wait_ms,network_ms,selected_dc_vm_count,selected_dc_queue_len,selected_dc_avg_queue_len,selected_dc_max_queue_len,selected_dc_avg_utilization,estimated_latency_ms,estimated_cost,estimated_reward,estimate_latency_error_ms,estimate_cost_error,estimate_reward_error,estimate_upload_ms,estimate_execution_ms,estimate_download_ms,estimate_vm_active_cloudlets,dc_queue_arrival_ms,reserved_vm_id,predicted_vm_available_time_ms,reserved_vm_start_ms,reserved_vm_finish_ms,reserved_dc_wait_ms,reserved_estimated_response_done_ms,reserved_estimated_latency_ms,bw_cost,cpu_cost,actual_cost,cost_source,cost_so_far,budget,latency_term,cost_term,budget_penalty,reward,budget_violated");
         rewardLogWriter.flush();
     }
 
@@ -907,7 +941,7 @@ public class DagRuntimeManager extends SimEntity {
         System.out.println("=======================================");
     }
 
-    private double normalizeRewardComponent(double value, double minValue, double maxValue, double fallbackScale, boolean clip) {
+    private double normalizeRewardComponent( double value, double minValue, double maxValue, double fallbackScale, boolean clip) {
         double normalized;
         if (maxValue > minValue) {
             normalized = (value - minValue) / Math.max(1e-9, maxValue - minValue);
@@ -925,8 +959,9 @@ public class DagRuntimeManager extends SimEntity {
         // Compute same derived fields as scheduling time for logging
         SimSettings ss = SimSettings.getInstance();
         long lengthMi = (long) (task.getDurationMs() * ss.getMipsForCloudVM() / 1000.0);
-        if (lengthMi <= 0)
+        if (lengthMi <= 0) {
             lengthMi = 1;
+        }
         double projCloud = lengthMi / (double) ss.getMipsForCloudVM();
         double projEdge = lengthMi / (double) ss.getMipsForMobileVM();
 
@@ -936,8 +971,9 @@ public class DagRuntimeManager extends SimEntity {
         } else {
             inputBytes = (long) (task.getMemoryMb() * 1024.0 * 1024.0 * 0.2);
         }
-        if (inputBytes <= 0)
+        if (inputBytes <= 0) {
             inputBytes = 1024;
+        }
         long outputBytes = Math.max(1024L, (long) (inputBytes * 0.1));
 
         taskLogWriter.println(String.join(",",
@@ -978,10 +1014,11 @@ public class DagRuntimeManager extends SimEntity {
         int cloudTasks = 0;
         double totalNetMs = 0;
         for (TaskRecord task : dag.getTasksById().values()) {
-            if (task.getAssignedTier() == SimSettings.VM_TYPES.EDGE_VM.ordinal())
+            if (task.getAssignedTier() == SimSettings.VM_TYPES.EDGE_VM.ordinal()) {
                 edgeTasks++;
-            else if (task.getAssignedTier() == SimSettings.VM_TYPES.CLOUD_VM.ordinal())
+            } else if (task.getAssignedTier() == SimSettings.VM_TYPES.CLOUD_VM.ordinal()) {
                 cloudTasks++;
+            }
 
             totalNetMs += task.getNetworkDelayMs();
         }

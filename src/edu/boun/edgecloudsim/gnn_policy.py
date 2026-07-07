@@ -4,13 +4,12 @@ gnn_policy.py
 GNN feature extractor for SB3 MaskablePPO.
 
 Graph structure:
-  Node 0:      task node    (current task being scheduled)
-  Nodes 1-8:   edge DC nodes (one per edge DC)
-  Node 9:      cloud node
-  Node 10:     global node  (system-wide state)
+  Node 0: task node for the current task being scheduled
+  Next nodes: one node per edge/cloud datacenter
+  Last node: global system state
 
-Each node has NODE_FEAT_DIM=15 features (12 content + 3 role encoding).
-Observation is flattened: node_features (11×15=165) + adjacency (11×11=121) = 286 values.
+Each node has NUM_NODE_FEATS=15 features: 12 content features and 3 role features.
+Observation is flattened as node features followed by the adjacency matrix.
 """
 
 import numpy as np
@@ -23,26 +22,38 @@ import gymnasium as gym
 # ── Constants ──────────────────────────────────────────────────────────────────
 NUM_TASK_TYPES = 7
 TASK_TYPES = {
-    "vae_encode":       0,
-    "unet_denoise":     1,
-    "sampler":          2,
-    "vae_decode":       3,
-    "lora_load":        4,
-    "controlnet_load":  5,
-    "base_model_load":  6,
+    "vae_encode": 0,
+    "unet_denoise": 1,
+    "sampler": 2,
+    "vae_decode": 3,
+    "lora_load": 4,
+    "controlnet_load": 5,
+    "base_model_load": 6,
 }
 
-NODE_FEAT_DIM  = 15   # 12 content features + 3 role encoding
-CONTENT_DIM    = 12
-ROLE_DIM       = 3
+NUM_NODE_FEATS = 15  # 12 content features + 3 role encoding
+NUM_CONTENTS = 12
 
-# Role encodings
-ROLE_TASK   = np.array([1.0, 0.0, 0.0], dtype=np.float32)
-ROLE_DC     = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+ROLE_TASK = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+ROLE_DC = np.array([0.0, 1.0, 0.0], dtype=np.float32)
 ROLE_GLOBAL = np.array([0.0, 0.0, 1.0], dtype=np.float32)
 
+# Reservation waits can grow with workload size. This is only a soft reference
+# scale for log normalization, not a hard cap.
+WAIT_TIME_SCALE = 600_000.0
 
-# ── Normalization helpers ──────────────────────────────────────────────────────
+DC_SHORTEST_WAIT_TIME = 7
+DC_BUSY_VM = 8
+DC_COST_PER_BW = 9
+
+GLOBAL_EDGE_UTILIZATION = 1
+GLOBAL_CLOUD_UTILIZATION = 4
+GLOBAL_BUDGET_USED = 6
+GLOBAL_REMAINING_BUDGET = 7
+GLOBAL_ACTIVE_DAGS = 8
+
+
+# Normalization helper functions
 def log_norm(value: float, max_expected: float = 5000.0) -> float:
     """Log normalization — handles any scale without hard clipping."""
     import math
@@ -57,7 +68,18 @@ def safe_hash(value: str) -> float:
     return (abs(hash(value)) % 10000) / 10000.0
 
 
-# ── Node feature builders ──────────────────────────────────────────────────────
+def reservation_wait_stats(dc_vms: list) -> tuple[float, float]:
+    """Return shortest VM wait and busy VM fraction for one datacenter."""
+    if not dc_vms:
+        return 0.0, 0.0
+
+    waiting_times = [float(vm.get("reservedWaitMs", 0.0)) for vm in dc_vms]
+    shortest_wait_time = min(waiting_times)
+    busy_fraction = sum(1 for waiting_time in waiting_times if waiting_time > 0.0) / len(waiting_times)
+    return shortest_wait_time, busy_fraction
+
+
+# Node features
 def task_node_features(task: dict, budget: dict) -> np.ndarray:
     """12 content features for the task node."""
     task_type_str = task.get("taskType", "vae_encode")
@@ -65,13 +87,12 @@ def task_node_features(task: dict, budget: dict) -> np.ndarray:
     task_type_onehot = np.zeros(NUM_TASK_TYPES, dtype=np.float32)
     task_type_onehot[task_type_idx] = 1.0
 
-    features = np.zeros(CONTENT_DIM, dtype=np.float32)
+    features = np.zeros(NUM_CONTENTS, dtype=np.float32)
     features[0] = clip_norm(task.get("mi", 0.0), 13_000_000.0)
     features[1] = clip_norm(task.get("dataSizeBytes", 0.0), 1_073_741_824.0)
-    features[2:9] = task_type_onehot                              # 7 values
-    features[9]  = float(np.clip(budget.get("budgetFractionUsed", 0.0), 0.0, 1.0))
+    features[2:9] = task_type_onehot  # 7 values
+    features[9] = float(np.clip(budget.get("budgetFractionUsed", 0.0), 0.0, 1.0))
     features[10] = safe_hash(task.get("dagId", ""))
-    features[11] = 0.0  # reserved
     return features
 
 
@@ -80,124 +101,120 @@ def dc_node_features(vm_list: list, dc_id: int, is_edge: bool) -> np.ndarray:
     dc_vms = [vm for vm in vm_list if int(vm["dcId"]) == dc_id]
 
     if dc_vms:
-        total_mips  = sum(float(vm["availableMips"]) for vm in dc_vms)
-        avg_util    = sum(float(vm["utilization"]) for vm in dc_vms) / len(dc_vms)
+        total_mips = sum(float(vm["availableMips"]) for vm in dc_vms)
+        avg_util = sum(float(vm["utilization"]) for vm in dc_vms) / len(dc_vms)
         total_queue = sum(int(vm["queueLen"]) for vm in dc_vms)
         cost_per_sec = float(dc_vms[0].get("costPerSec", 0.0))
+        cost_per_bw = float(dc_vms[0].get("costPerBw", 0.0))
     else:
-        total_mips = avg_util = total_queue = cost_per_sec = 0.0
+        total_mips = avg_util = total_queue = cost_per_sec = cost_per_bw = 0.0
 
-    # Normalize MIPS differently for edge vs cloud
+    shortest_wait_time, busy_vm_fraction = reservation_wait_stats(dc_vms)
+
+    # Edge and cloud have very different MIPS scales.
     mips_divisor = 20_000.0 if is_edge else 12_800_000.0
 
-    features = np.zeros(CONTENT_DIM, dtype=np.float32)
+    features = np.zeros(NUM_CONTENTS, dtype=np.float32)
     features[0] = clip_norm(total_mips, mips_divisor)
     features[1] = float(np.clip(avg_util, 0.0, 1.0))
     features[2] = log_norm(total_queue, 5000.0)
     features[3] = 1.0 if is_edge else 0.0
     features[4] = 0.0 if is_edge else 1.0
-    features[5] = dc_id / 8.0                                    # normalized DC id
+    features[5] = dc_id / 8.0  # normalized DC id
     features[6] = clip_norm(cost_per_sec, 1e-4)
-    # features[7:12] = zeros
+    features[DC_SHORTEST_WAIT_TIME] = log_norm(shortest_wait_time, WAIT_TIME_SCALE)
+    features[DC_BUSY_VM] = float(np.clip(busy_vm_fraction, 0.0, 1.0))
+    features[DC_COST_PER_BW] = clip_norm(cost_per_bw, 1e-9)
     return features
 
 
-def global_node_features(cluster: dict, budget: dict, queue: dict, time: dict) -> np.ndarray:
+def global_node_features(cluster: dict, budget: dict, queue: dict) -> np.ndarray:
     """12 content features for the global node."""
-    edge  = cluster.get("edge",  {})
+    edge = cluster.get("edge", {})
     cloud = cluster.get("cloud", {})
 
-    features = np.zeros(CONTENT_DIM, dtype=np.float32)
-    features[0]  = clip_norm(edge.get("availableMips", 0.0),  16_000.0)
-    features[1]  = float(np.clip(edge.get("utilization", 0.0), 0.0, 1.0))
-    features[2]  = log_norm(edge.get("queueLen", 0),  20_000.0)
-    features[3]  = clip_norm(cloud.get("availableMips", 0.0), 12_800_000.0)
-    features[4]  = float(np.clip(cloud.get("utilization", 0.0), 0.0, 1.0))
-    features[5]  = log_norm(cloud.get("queueLen", 0),  1_000.0)
-    features[6]  = float(np.clip(budget.get("budgetFractionUsed", 0.0), 0.0, 1.0))
-    features[7]  = clip_norm(budget.get("remainingBudget", 0.0), 1800.0)
-    features[8]  = clip_norm(queue.get("activeDagCount", 0),  1000.0)
-    features[9]  = log_norm(queue.get("totalQueueLen", 0),   50_000.0)
-    features[10] = clip_norm(time.get("simTime", 0.0),       60_000_000.0)
-    features[11] = 0.0  # reserved
+    features = np.zeros(NUM_CONTENTS, dtype=np.float32)
+    features[GLOBAL_EDGE_UTILIZATION] = float(np.clip(edge.get("utilization", 0.0), 0.0, 1.0))
+    features[GLOBAL_CLOUD_UTILIZATION] = float(np.clip(cloud.get("utilization", 0.0), 0.0, 1.0))
+    features[GLOBAL_BUDGET_USED] = float(
+        np.clip(budget.get("budgetFractionUsed", 0.0), 0.0, 1.0)
+    )
+    features[GLOBAL_REMAINING_BUDGET] = clip_norm(budget.get("remainingBudget", 0.0), 1800.0)
+    features[GLOBAL_ACTIVE_DAGS] = clip_norm(queue.get("activeDagCount", 0), 1000.0)
     return features
 
 
-# ── Graph observation builder ──────────────────────────────────────────────────
 def build_graph_obs(state: dict, num_edge_dc: int = 8, num_cloud_dc: int = 1) -> np.ndarray:
     """
     Build flattened graph observation from state dict.
     Returns array of shape (obs_dim,) = (num_nodes*15 + num_nodes*num_nodes,)
     """
-    num_dc    = num_edge_dc + num_cloud_dc
+    num_dc = num_edge_dc + num_cloud_dc
     num_nodes = num_dc + 2          # DCs + task node + global node
-    task_idx  = 0
+    task_idx = 0
     global_idx = num_nodes - 1
 
-    task    = state.get("task",    {})
+    task = state.get("task", {})
     cluster = state.get("cluster", {})
-    budget  = state.get("budget",  {})
-    queue   = state.get("queue",   {})
-    time    = state.get("time",    {})
+    budget = state.get("budget", {})
+    queue = state.get("queue", {})
 
-    edge_vms  = cluster.get("edgeVms",  [])
+    edge_vms = cluster.get("edgeVms", [])
     cloud_vms = cluster.get("cloudVms", [])
 
-    node_features = np.zeros((num_nodes, NODE_FEAT_DIM), dtype=np.float32)
-    adjacency     = np.eye(num_nodes, dtype=np.float32)   # self-loops
+    node_features = np.zeros((num_nodes, NUM_NODE_FEATS), dtype=np.float32)
+    adjacency = np.eye(num_nodes, dtype=np.float32)  # self-loops
 
-    # Task node (index 0)
-    node_features[task_idx, :CONTENT_DIM] = task_node_features(task, budget)
-    node_features[task_idx, CONTENT_DIM:] = ROLE_TASK
+    node_features[task_idx, :NUM_CONTENTS] = task_node_features(task, budget)
+    node_features[task_idx, NUM_CONTENTS:] = ROLE_TASK
 
-    # Edge DC nodes (indices 1 to num_edge_dc)
     for dc_id in range(num_edge_dc):
         node_idx = dc_id + 1
-        node_features[node_idx, :CONTENT_DIM] = dc_node_features(edge_vms, dc_id, is_edge=True)
-        node_features[node_idx, CONTENT_DIM:] = ROLE_DC
-        # Connect task ↔ DC and global ↔ DC
-        adjacency[task_idx, node_idx]  = 1.0
-        adjacency[node_idx, task_idx]  = 1.0
+        node_features[node_idx, :NUM_CONTENTS] = dc_node_features(edge_vms, dc_id, is_edge=True)
+        node_features[node_idx, NUM_CONTENTS:] = ROLE_DC
+        adjacency[task_idx, node_idx] = 1.0
+        adjacency[node_idx, task_idx] = 1.0
         adjacency[global_idx, node_idx] = 1.0
         adjacency[node_idx, global_idx] = 1.0
 
-    # Cloud DC node (index num_edge_dc + 1)
     cloud_node_idx = num_edge_dc + 1
-    node_features[cloud_node_idx, :CONTENT_DIM] = dc_node_features(cloud_vms, 0, is_edge=False)
-    node_features[cloud_node_idx, CONTENT_DIM:] = ROLE_DC
-    adjacency[task_idx, cloud_node_idx]   = 1.0
-    adjacency[cloud_node_idx, task_idx]   = 1.0
+    node_features[cloud_node_idx, :NUM_CONTENTS] = dc_node_features(cloud_vms, 0, is_edge=False)
+    node_features[cloud_node_idx, NUM_CONTENTS:] = ROLE_DC
+    adjacency[task_idx, cloud_node_idx] = 1.0
+    adjacency[cloud_node_idx, task_idx] = 1.0
     adjacency[global_idx, cloud_node_idx] = 1.0
     adjacency[cloud_node_idx, global_idx] = 1.0
 
-    # Global node (last index)
-    node_features[global_idx, :CONTENT_DIM] = global_node_features(cluster, budget, queue, time)
-    node_features[global_idx, CONTENT_DIM:]  = ROLE_GLOBAL
-    adjacency[task_idx, global_idx]  = 1.0
-    adjacency[global_idx, task_idx]  = 1.0
+    node_features[global_idx, :NUM_CONTENTS] = global_node_features(cluster, budget, queue)
+    node_features[global_idx, NUM_CONTENTS:] = ROLE_GLOBAL
+    adjacency[task_idx, global_idx] = 1.0
+    adjacency[global_idx, task_idx] = 1.0
 
     return np.concatenate([node_features.flatten(), adjacency.flatten()])
 
 
 def graph_obs_dim(num_edge_dc: int = 8, num_cloud_dc: int = 1) -> int:
     num_nodes = num_edge_dc + num_cloud_dc + 2
-    return (num_nodes * NODE_FEAT_DIM) + (num_nodes * num_nodes)
+    return (num_nodes * NUM_NODE_FEATS) + (num_nodes * num_nodes)
 
 
-# ── GNN layers ─────────────────────────────────────────────────────────────────
+# GNN layers
 class MessagePassingBlock(nn.Module):
     """Single GNN message passing layer with residual connection."""
 
     def __init__(self, hidden_dim: int) -> None:
         super().__init__()
-        self.self_proj  = nn.Linear(hidden_dim, hidden_dim)
-        self.neigh_proj = nn.Linear(hidden_dim, hidden_dim)
-        self.norm       = nn.LayerNorm(hidden_dim)
+        self.self_projection = nn.Linear(hidden_dim, hidden_dim)
+        self.neighbor_projection = nn.Linear(hidden_dim, hidden_dim)
+        self.layer_norm = nn.LayerNorm(hidden_dim)
 
-    def forward(self, node_h: torch.Tensor, norm_adj: torch.Tensor) -> torch.Tensor:
-        neigh_h = torch.bmm(norm_adj, node_h)
-        updated = torch.relu(self.self_proj(node_h) + self.neigh_proj(neigh_h))
-        return self.norm(node_h + updated)
+    def forward(self, node_embeddings: torch.Tensor, normalized_adjacency: torch.Tensor) -> torch.Tensor:
+        neighbor_embeddings = torch.bmm(normalized_adjacency, node_embeddings)
+        updated_embeddings = torch.relu(
+            self.self_projection(node_embeddings)
+            + self.neighbor_projection(neighbor_embeddings)
+        )
+        return self.layer_norm(node_embeddings + updated_embeddings)
 
 
 # ── SB3 feature extractor ──────────────────────────────────────────────────────
@@ -224,48 +241,48 @@ class GNNExtractor(BaseFeaturesExtractor):
     def __init__(
         self,
         observation_space: gym.Space,
-        num_edge_dc:  int = 8,
+        num_edge_dc: int = 8,
         num_cloud_dc: int = 1,
-        hidden_dim:   int = 128,
-        n_layers:     int = 2,
+        hidden_dim: int = 128,
+        n_layers: int = 2,
     ) -> None:
-        self.num_edge_dc  = num_edge_dc
+        self.num_edge_dc = num_edge_dc
         self.num_cloud_dc = num_cloud_dc
-        self.num_dc       = num_edge_dc + num_cloud_dc
-        self.num_nodes    = self.num_dc + 2
-        self.hidden_dim   = hidden_dim
+        self.num_dc = num_edge_dc + num_cloud_dc
+        self.num_nodes = self.num_dc + 2
+        self.hidden_dim = hidden_dim
 
         # Output: [task_h | mean_dc_h | global_h] = 3 × hidden_dim
         features_dim = hidden_dim * 3
         super().__init__(observation_space, features_dim=features_dim)
 
-        self.input_proj = nn.Linear(NODE_FEAT_DIM, hidden_dim)
+        self.input_proj = nn.Linear(NUM_NODE_FEATS, hidden_dim)
         self.gnn_layers = nn.ModuleList([
             MessagePassingBlock(hidden_dim) for _ in range(max(1, n_layers))
         ])
 
     @staticmethod
-    def _normalize_adjacency(adj: torch.Tensor) -> torch.Tensor:
-        degree      = adj.sum(dim=-1)
-        inv_sqrt    = torch.rsqrt(degree.clamp(min=1.0))
-        return adj * inv_sqrt.unsqueeze(-1) * inv_sqrt.unsqueeze(-2)
+    def _normalize_adjacency(adjacency: torch.Tensor) -> torch.Tensor:
+        node_degrees = adjacency.sum(dim=-1)
+        inverse_sqrt_degrees = torch.rsqrt(node_degrees.clamp(min=1.0))
+        return adjacency * inverse_sqrt_degrees.unsqueeze(-1) * inverse_sqrt_degrees.unsqueeze(-2)
 
     def forward(self, obs: torch.Tensor) -> torch.Tensor:
-        B         = obs.shape[0]
-        feat_size = self.num_nodes * NODE_FEAT_DIM
-        adj_size  = self.num_nodes * self.num_nodes
+        batch_size = obs.shape[0]
+        feat_size = self.num_nodes * NUM_NODE_FEATS
+        adj_size = self.num_nodes * self.num_nodes
 
-        node_features = obs[:, :feat_size].reshape(B, self.num_nodes, NODE_FEAT_DIM)
-        adjacency     = obs[:, feat_size: feat_size + adj_size].reshape(B, self.num_nodes, self.num_nodes)
+        node_features = obs[:, :feat_size].reshape(batch_size, self.num_nodes, NUM_NODE_FEATS)
+        adjacency = obs[:, feat_size: feat_size + adj_size].reshape(batch_size, self.num_nodes, self.num_nodes)
 
         # GNN encoding
-        h        = torch.relu(self.input_proj(node_features))
-        norm_adj = self._normalize_adjacency(adjacency)
+        node_embeddings = torch.relu(self.input_proj(node_features))
+        normalized_adjacency = self._normalize_adjacency(adjacency)
         for layer in self.gnn_layers:
-            h = layer(h, norm_adj)
+            node_embeddings = layer(node_embeddings, normalized_adjacency)
 
-        task_h   = h[:, 0, :]                           # task node
-        dc_h     = h[:, 1:self.num_dc + 1, :].mean(1)  # mean over DC nodes
-        global_h = h[:, -1, :]                          # global node
+        task_embedding = node_embeddings[:, 0, :]  # task node
+        dc_embedding = node_embeddings[:, 1:self.num_dc + 1, :].mean(1)  # mean over DC nodes
+        global_embedding = node_embeddings[:, -1, :]  # global node
 
-        return torch.cat([task_h, dc_h, global_h], dim=-1)
+        return torch.cat([task_embedding, dc_embedding, global_embedding], dim=-1)

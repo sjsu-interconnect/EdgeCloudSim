@@ -48,16 +48,12 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
 
         try {
             if (decision.destTier == PlacementDecision.TIER_CLOUD) {
-                List<CloudVM> vms = SimManager.getInstance()
-                        .getCloudServerManager()
-                        .getVmList(decision.destDatacenterId);
+                List<CloudVM> vms = SimManager.getInstance().getCloudServerManager().getVmList(decision.destDatacenterId);
 
                 Vm selected = selectVmForDatacenter(vms, true);
                 return selected;
             } else {
-                List<EdgeVM> vms = SimManager.getInstance()
-                        .getEdgeServerManager()
-                        .getVmList(decision.destDatacenterId);
+                List<EdgeVM> vms = SimManager.getInstance().getEdgeServerManager().getVmList(decision.destDatacenterId);
 
                 Vm selected = selectVmForDatacenter(vms, false);
                 return selected;
@@ -88,17 +84,15 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         double bestReservedAvailableAtMs = Double.POSITIVE_INFINITY;
 
         for (Vm vm : vms) {
-            int reservationDatacenterId = cloudTier
-                    ? SimSettings.CLOUD_DATACENTER_ID
-                    : vm.getHost().getDatacenter().getId();
+            int reservationDatacenterId = cloudTier ? SimSettings.CLOUD_DATACENTER_ID : vm.getHost().getDatacenter().getId();
             double reservedAvailableAtMs = 0.0;
             DagRuntimeManager drm = DagRuntimeManager.getInstance();
             if (drm != null) {
                 reservedAvailableAtMs = drm.getReservedVmAvailableAtMs(reservationDatacenterId, vm.getId());
             }
             if (best == null
-                    || reservedAvailableAtMs < bestReservedAvailableAtMs
-                    || (reservedAvailableAtMs == bestReservedAvailableAtMs && vm.getId() < best.getId())) {
+                || reservedAvailableAtMs < bestReservedAvailableAtMs
+                || (reservedAvailableAtMs == bestReservedAvailableAtMs && vm.getId() < best.getId())) {
                 best = vm;
                 bestReservedAvailableAtMs = reservedAvailableAtMs;
             }
@@ -128,6 +122,7 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
 
     public static ClusterState buildClusterStateSnapshot() {
         ClusterState state = new ClusterState(CloudSim.clock() * 1000.0);
+        DagRuntimeManager drm = DagRuntimeManager.getInstance();
 
         // Populate VMs based on EdgeServerManager and CloudServerManager
         int numEdgeDcs = SimSettings.getInstance().getNumOfEdgeDatacenters();
@@ -140,27 +135,44 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
             state.vms[PlacementDecision.TIER_EDGE][dc] = new ClusterState.VMInfo[edgeVms.size()];
             for (int vmIdx = 0; vmIdx < edgeVms.size(); vmIdx++) {
                 EdgeVM evm = edgeVms.get(vmIdx);
-                state.vms[PlacementDecision.TIER_EDGE][dc][vmIdx] = new ClusterState.VMInfo(
-                        evm.getId(), dc, PlacementDecision.TIER_EDGE, evm.getMips());
-                state.vms[PlacementDecision.TIER_EDGE][dc][vmIdx].queuedTaskCount = evm.getCloudletScheduler()
-                        .getCloudletExecList().size();
+                ClusterState.VMInfo vmInfo = new ClusterState.VMInfo(evm.getId(), dc, PlacementDecision.TIER_EDGE, evm.getMips());
+                vmInfo.queuedTaskCount = evm.getCloudletScheduler().getCloudletExecList().size();
+                if (drm != null) {
+                    int reservationDatacenterId = evm.getHost().getDatacenter().getId();
+                    vmInfo.reservedAvailableAtMs = drm.getReservedVmAvailableAtMs(reservationDatacenterId, evm.getId());
+                    vmInfo.reservedWaitMs = Math.max(0.0, vmInfo.reservedAvailableAtMs - state.currentTimeMs);
+                }
+                applyDatacenterCosts(vmInfo, evm.getHost().getDatacenter().getId());
+                state.vms[PlacementDecision.TIER_EDGE][dc][vmIdx] = vmInfo;
             }
         }
 
         // Cloud Tier
-        state.vms[PlacementDecision.TIER_CLOUD] = new ClusterState.VMInfo[1][]; // Cloud is usually one DC in
-                                                                                // EdgeCloudSim
+        state.vms[PlacementDecision.TIER_CLOUD] = new ClusterState.VMInfo[1][];
         List<CloudVM> cloudVms = SimManager.getInstance().getCloudServerManager().getVmList(0);
         state.vms[PlacementDecision.TIER_CLOUD][0] = new ClusterState.VMInfo[cloudVms.size()];
         for (int vmIdx = 0; vmIdx < cloudVms.size(); vmIdx++) {
             CloudVM cvm = cloudVms.get(vmIdx);
-            state.vms[PlacementDecision.TIER_CLOUD][0][vmIdx] = new ClusterState.VMInfo(
-                    cvm.getId(), 0, PlacementDecision.TIER_CLOUD, cvm.getMips());
-            state.vms[PlacementDecision.TIER_CLOUD][0][vmIdx].queuedTaskCount = cvm.getCloudletScheduler()
-                    .getCloudletExecList().size();
+            ClusterState.VMInfo vmInfo = new ClusterState.VMInfo(cvm.getId(), 0, PlacementDecision.TIER_CLOUD, cvm.getMips());
+            vmInfo.queuedTaskCount = cvm.getCloudletScheduler().getCloudletExecList().size();
+            if (drm != null) {
+                vmInfo.reservedAvailableAtMs = drm.getReservedVmAvailableAtMs(SimSettings.CLOUD_DATACENTER_ID, cvm.getId());
+                vmInfo.reservedWaitMs = Math.max(0.0, vmInfo.reservedAvailableAtMs - state.currentTimeMs);
+            }
+            applyDatacenterCosts(vmInfo, cvm.getHost().getDatacenter().getId());
+            state.vms[PlacementDecision.TIER_CLOUD][0][vmIdx] = vmInfo;
         }
 
         return state;
+    }
+
+    private static void applyDatacenterCosts(ClusterState.VMInfo vmInfo, int actualDatacenterId) {
+        Double[] costs = SimSettings.datacenterCosts.get(actualDatacenterId);
+        if (costs == null) {
+            return;
+        }
+        vmInfo.costPerBw = costs.length > 0 && costs[0] != null ? costs[0] : 0.0;
+        vmInfo.costPerSec = costs.length > 1 && costs[1] != null ? costs[1] : 0.0;
     }
 
     @Override

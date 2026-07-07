@@ -227,6 +227,10 @@ public class RemoteRLPolicy implements SchedulingPolicy {
                                 : Math.min(1.0, vm.queuedTaskCount / (double) (vm.queuedTaskCount + 1));
                         vmObj.addProperty("utilization", util);
                         vmObj.addProperty("queueLen", vm.queuedTaskCount);
+                        vmObj.addProperty("reservedAvailableAtMs", vm.reservedAvailableAtMs);
+                        vmObj.addProperty("reservedWaitMs", vm.reservedWaitMs);
+                        vmObj.addProperty("costPerBw", vm.costPerBw);
+                        vmObj.addProperty("costPerSec", vm.costPerSec);
                         totalQueue += vm.queuedTaskCount;
 
                         if (tier == PlacementDecision.TIER_EDGE) {
@@ -282,29 +286,6 @@ public class RemoteRLPolicy implements SchedulingPolicy {
         return root;
     }
 
-    // private static JsonArray buildActionMask(ClusterState state) {
-    //     int actions = 0;
-    //     if (state.vms != null) {
-    //         for (ClusterState.VMInfo[][] tier : state.vms) {
-    //             if (tier == null) {
-    //                 continue;
-    //             }
-    //             for (ClusterState.VMInfo[] dcVms : tier) {
-    //                 if (dcVms != null) {
-    //                     actions += dcVms.length;
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     if (actions <= 0) {
-    //         actions = 2;
-    //     }
-    //     JsonArray arr = new JsonArray();
-    //     for (int i = 0; i < actions; i++) {
-    //         arr.add(1);
-    //     }
-    //     return arr;
-    // }
     private static JsonArray buildActionMask(ClusterState state) {
         JsonArray arr = new JsonArray();
 
