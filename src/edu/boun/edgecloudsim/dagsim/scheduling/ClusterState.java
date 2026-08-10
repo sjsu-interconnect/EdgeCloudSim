@@ -15,8 +15,8 @@ public class ClusterState {
         public double freeGpuMemoryMb;
         public int queuedTaskCount;
         public double totalQueueWaitTimeMs; // Estimate for pending tasks
-        public double reservedAvailableAtMs; // Estimated sim time when this VM is free
-        public double reservedWaitMs; // Estimated wait from current time until this VM is free
+        public double estimatedAvailableTimeMs; // Estimated sim time when this VM is free
+        public double estimatedWaitTimeMs; // Estimated wait from current time until this VM is free
         public double costPerBw;
         public double costPerSec;
 
@@ -29,8 +29,8 @@ public class ClusterState {
             this.freeGpuMemoryMb = Double.MAX_VALUE;
             this.queuedTaskCount = 0;
             this.totalQueueWaitTimeMs = 0;
-            this.reservedAvailableAtMs = 0;
-            this.reservedWaitMs = 0;
+            this.estimatedAvailableTimeMs = 0;
+            this.estimatedWaitTimeMs = 0;
             this.costPerBw = 0;
             this.costPerSec = 0;
         }

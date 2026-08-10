@@ -80,6 +80,8 @@ public class RemoteRLPolicy implements SchedulingPolicy {
                 vmId = selectDefaultVmId(state, tier, datacenterId);
             }
 
+            applyRewardBounds(decisionObj);
+
             if (task.dagId != null && task.taskId != null) {
                 JsonObject actionObj = new JsonObject();
                 actionObj.addProperty("tier", tierName);
@@ -126,6 +128,42 @@ public class RemoteRLPolicy implements SchedulingPolicy {
 
             return fallback;
         }
+    }
+
+    private void applyRewardBounds(JsonObject decisionObj) {
+        if (!decisionObj.has("rewardBounds") || decisionObj.get("rewardBounds").isJsonNull()) {
+            return;
+        }
+
+        JsonObject bounds = decisionObj.getAsJsonObject("rewardBounds");
+        if (!bounds.has("latencyMinMs") || !bounds.has("latencyMaxMs")
+                || !bounds.has("costMin") || !bounds.has("costMax")) {
+            return;
+        }
+
+        DagRuntimeManager drm = DagRuntimeManager.getInstance();
+        if (drm == null) {
+            return;
+        }
+
+        String normalization = bounds.has("normalization")
+                ? bounds.get("normalization").getAsString()
+                : "minmax";
+        double latencyMeanMs = bounds.has("latencyMeanMs") ? bounds.get("latencyMeanMs").getAsDouble() : 0.0;
+        double latencyStdMs = bounds.has("latencyStdMs") ? bounds.get("latencyStdMs").getAsDouble() : 1.0;
+        double costMean = bounds.has("costMean") ? bounds.get("costMean").getAsDouble() : 0.0;
+        double costStd = bounds.has("costStd") ? bounds.get("costStd").getAsDouble() : 1.0;
+
+        drm.setRuntimeRewardNormalization(
+                normalization,
+                bounds.get("latencyMinMs").getAsDouble(),
+                bounds.get("latencyMaxMs").getAsDouble(),
+                latencyMeanMs,
+                latencyStdMs,
+                bounds.get("costMin").getAsDouble(),
+                bounds.get("costMax").getAsDouble(),
+                costMean,
+                costStd);
     }
 
     @Override
@@ -227,8 +265,8 @@ public class RemoteRLPolicy implements SchedulingPolicy {
                                 : Math.min(1.0, vm.queuedTaskCount / (double) (vm.queuedTaskCount + 1));
                         vmObj.addProperty("utilization", util);
                         vmObj.addProperty("queueLen", vm.queuedTaskCount);
-                        vmObj.addProperty("reservedAvailableAtMs", vm.reservedAvailableAtMs);
-                        vmObj.addProperty("reservedWaitMs", vm.reservedWaitMs);
+                        vmObj.addProperty("estimatedAvailableTimeMs", vm.estimatedAvailableTimeMs);
+                        vmObj.addProperty("estimatedWaitTimeMs", vm.estimatedWaitTimeMs);
                         vmObj.addProperty("costPerBw", vm.costPerBw);
                         vmObj.addProperty("costPerSec", vm.costPerSec);
                         totalQueue += vm.queuedTaskCount;

@@ -320,10 +320,10 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 			if (WlanDelay > 0) {
 				// Start network upload and schedule task arrival after delay
 				networkModel.uploadStarted(currentLocation, nextHopId);
-				schedule(getId(), WlanDelay, REQUEST_RECEIVED_BY_EDGE_DEVICE, task);
 				SimLogger.getInstance().taskStarted(task.getCloudletId(), CloudSim.clock());
 				SimLogger.getInstance().setUploadDelay(task.getCloudletId(), WlanDelay, NETWORK_DELAY_TYPES.WLAN_DELAY);
 				uploadDelayByTaskId.put(task.getCloudletId(), WlanDelay);
+				schedule(getId(), WlanDelay, REQUEST_RECEIVED_BY_EDGE_DEVICE, task);
 			} else {
 				// WLAN bandwidth not available - reject task
 				SimLogger.getInstance().rejectedDueToBandwidth( task.getCloudletId(), CloudSim.clock(), SimSettings.VM_TYPES.EDGE_VM.ordinal(), NETWORK_DELAY_TYPES.WLAN_DELAY);
@@ -362,11 +362,11 @@ public class DefaultMobileDeviceManager extends MobileDeviceManager {
 			task.setAssociatedHostId(selectedVM.getHost().getId());
 			task.setAssociatedVmId(selectedVM.getId());
 
-			double uploadDelay = uploadDelayByTaskId.containsKey(task.getCloudletId()) ? uploadDelayByTaskId.remove(task.getCloudletId()) : Math.max(0.0, CloudSim.clock() - task.getSubmissionTime());
-			double estimatedDownloadDelay = getEstimatedDownloadDelay(networkModel, task);
+			double uploadDelaySec = uploadDelayByTaskId.remove(task.getCloudletId());
+			double estimatedDownloadDelaySec = getEstimatedDownloadDelay(networkModel, task);
 			double reservedDcWaitSec = 0.0;
 			if (DagRuntimeManager.getInstance() != null) {
-				double reservedDcWaitMs = DagRuntimeManager.getInstance().recordEstimatedReward(task, selectedVM.getMips(), activeCloudletsBeforeSubmit, uploadDelay, estimatedDownloadDelay);
+				double reservedDcWaitMs = DagRuntimeManager.getInstance().recordEstimatedReward(task, selectedVM.getMips(), activeCloudletsBeforeSubmit, uploadDelaySec, estimatedDownloadDelaySec);
 				reservedDcWaitSec = Math.max(0.0, reservedDcWaitMs / 1000.0);
 			}
 

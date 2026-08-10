@@ -81,20 +81,20 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         }
 
         Vm best = null;
-        double bestReservedAvailableAtMs = Double.POSITIVE_INFINITY;
+        double bestEstimatedAvailableTimeMs = Double.POSITIVE_INFINITY;
 
         for (Vm vm : vms) {
-            int reservationDatacenterId = cloudTier ? SimSettings.CLOUD_DATACENTER_ID : vm.getHost().getDatacenter().getId();
-            double reservedAvailableAtMs = 0.0;
+            int vmDatacenterId = cloudTier ? SimSettings.CLOUD_DATACENTER_ID : vm.getHost().getDatacenter().getId();
+            double estimatedAvailableTimeMs = 0.0;
             DagRuntimeManager drm = DagRuntimeManager.getInstance();
             if (drm != null) {
-                reservedAvailableAtMs = drm.getReservedVmAvailableAtMs(reservationDatacenterId, vm.getId());
+                estimatedAvailableTimeMs = drm.getEstimatedAvailableVmTimeMs(vmDatacenterId, vm.getId());
             }
             if (best == null
-                || reservedAvailableAtMs < bestReservedAvailableAtMs
-                || (reservedAvailableAtMs == bestReservedAvailableAtMs && vm.getId() < best.getId())) {
+                || estimatedAvailableTimeMs < bestEstimatedAvailableTimeMs
+                || (estimatedAvailableTimeMs == bestEstimatedAvailableTimeMs && vm.getId() < best.getId())) {
                 best = vm;
-                bestReservedAvailableAtMs = reservedAvailableAtMs;
+                bestEstimatedAvailableTimeMs = estimatedAvailableTimeMs;
             }
         }
 
@@ -138,9 +138,9 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
                 ClusterState.VMInfo vmInfo = new ClusterState.VMInfo(evm.getId(), dc, PlacementDecision.TIER_EDGE, evm.getMips());
                 vmInfo.queuedTaskCount = evm.getCloudletScheduler().getCloudletExecList().size();
                 if (drm != null) {
-                    int reservationDatacenterId = evm.getHost().getDatacenter().getId();
-                    vmInfo.reservedAvailableAtMs = drm.getReservedVmAvailableAtMs(reservationDatacenterId, evm.getId());
-                    vmInfo.reservedWaitMs = Math.max(0.0, vmInfo.reservedAvailableAtMs - state.currentTimeMs);
+                    int vmDatacenterId = evm.getHost().getDatacenter().getId();
+                    vmInfo.estimatedAvailableTimeMs = drm.getEstimatedAvailableVmTimeMs(vmDatacenterId, evm.getId());
+                    vmInfo.estimatedWaitTimeMs = Math.max(0.0, vmInfo.estimatedAvailableTimeMs - state.currentTimeMs);
                 }
                 applyDatacenterCosts(vmInfo, evm.getHost().getDatacenter().getId());
                 state.vms[PlacementDecision.TIER_EDGE][dc][vmIdx] = vmInfo;
@@ -156,8 +156,8 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
             ClusterState.VMInfo vmInfo = new ClusterState.VMInfo(cvm.getId(), 0, PlacementDecision.TIER_CLOUD, cvm.getMips());
             vmInfo.queuedTaskCount = cvm.getCloudletScheduler().getCloudletExecList().size();
             if (drm != null) {
-                vmInfo.reservedAvailableAtMs = drm.getReservedVmAvailableAtMs(SimSettings.CLOUD_DATACENTER_ID, cvm.getId());
-                vmInfo.reservedWaitMs = Math.max(0.0, vmInfo.reservedAvailableAtMs - state.currentTimeMs);
+                vmInfo.estimatedAvailableTimeMs = drm.getEstimatedAvailableVmTimeMs(SimSettings.CLOUD_DATACENTER_ID, cvm.getId());
+                vmInfo.estimatedWaitTimeMs = Math.max(0.0, vmInfo.estimatedAvailableTimeMs - state.currentTimeMs);
             }
             applyDatacenterCosts(vmInfo, cvm.getHost().getDatacenter().getId());
             state.vms[PlacementDecision.TIER_CLOUD][0][vmIdx] = vmInfo;

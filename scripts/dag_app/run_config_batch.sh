@@ -33,6 +33,24 @@ echo "Batch root: ${BATCH_ROOT}"
 echo "Compiling once before runs..."
 "${SCRIPT_DIR}/compile.sh"
 
+CONFIG_FILE="${SCRIPT_DIR}/config/${CONFIG_NAME}.properties"
+if [[ ! -f "${CONFIG_FILE}" ]]; then
+  CONFIG_FILE="${SCRIPT_DIR}/config/default_config.properties"
+fi
+
+ORCHESTRATOR_POLICIES="$(awk -F= '
+  /^[[:space:]]*orchestrator_policies[[:space:]]*=/ {
+    gsub(/[[:space:]]/, "", $2)
+    print toupper($2)
+    exit
+  }
+' "${CONFIG_FILE}")"
+
+USES_REMOTE_RL=false
+case ",${ORCHESTRATOR_POLICIES}," in
+  *,REMOTE_RL,*) USES_REMOTE_RL=true ;;
+esac
+
 PARSER="${SCRIPT_DIR}/parse_iteration_log.py"
 REWARD_PARSER="${SCRIPT_DIR}/summarize_reward_log.py"
 PARSER_JOBS=()
@@ -40,15 +58,17 @@ PARSER_JOBS=()
 for i in $(seq 1 "${NUM_RUNS}"); do
   RUN_TAG="ite$(printf '%02d' "${i}")"
   
-  echo "[${RUN_TAG}] waiting for training.py to be ready..."
-  while [ "$(redis-cli get rl:episode_ready 2>/dev/null)" != "1" ]; do
-    sleep 0.5
-  done
-  redis-cli del rl:episode_ready > /dev/null
-  echo "[${RUN_TAG}] training.py ready — starting simulation"
+  if [[ "${USES_REMOTE_RL}" == "true" ]]; then
+    echo "[${RUN_TAG}] waiting for training.py to be ready..."
+    while [ "$(redis-cli get rl:episode_ready 2>/dev/null)" != "1" ]; do
+      sleep 0.5
+    done
+    redis-cli del rl:episode_ready > /dev/null
+    echo "[${RUN_TAG}] training.py ready — starting simulation"
+  else
+    echo "[${RUN_TAG}] local policy (${ORCHESTRATOR_POLICIES}) — starting simulation"
+  fi
 
-
-  # echo "[${RUN_TAG}] starting simulation"
   "${SCRIPT_DIR}/runner.sh" "${BATCH_ROOT}" "${CONFIG_NAME}" "${EDGE_DEVICES_FILE}" "${APPLICATIONS_FILE}" "${i}"
 
   LOG_PATH="${CONFIG_ROOT}/ite${i}.log"

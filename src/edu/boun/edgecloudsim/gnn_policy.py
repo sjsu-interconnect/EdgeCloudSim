@@ -73,7 +73,10 @@ def reservation_wait_stats(dc_vms: list) -> tuple[float, float]:
     if not dc_vms:
         return 0.0, 0.0
 
-    waiting_times = [float(vm.get("reservedWaitMs", 0.0)) for vm in dc_vms]
+    waiting_times = [
+        float(vm.get("estimatedWaitTimeMs", vm.get("reservedWaitMs", 0.0)))
+        for vm in dc_vms
+    ]
     shortest_wait_time = min(waiting_times)
     busy_fraction = sum(1 for waiting_time in waiting_times if waiting_time > 0.0) / len(waiting_times)
     return shortest_wait_time, busy_fraction

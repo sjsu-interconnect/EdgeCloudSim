@@ -5,7 +5,12 @@ from redis_bridge import redis_bridge
 from gnn_policy import build_graph_obs, graph_obs_dim
 
 class SchedulingEnvironment(gym.Env):
-    def __init__(self, num_edge_dc=8, num_cloud_dc=1, timeout_seconds=120):
+    def __init__(
+        self,
+        num_edge_dc=8,
+        num_cloud_dc=1,
+        timeout_seconds=120,
+    ):
         super().__init__()
 
         self.num_edge_dc = num_edge_dc
@@ -28,9 +33,22 @@ class SchedulingEnvironment(gym.Env):
         self.current_done = False
         self.current_info = {}
         self.timeout_seconds = timeout_seconds
+        self.reward_bounds = None
+        self.continue_from_current_state_on_next_reset = False
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
+
+        if self.continue_from_current_state_on_next_reset and self.current_state is not None:
+            self.continue_from_current_state_on_next_reset = False
+            obs = self._get_obs(self.current_state)
+            action_mask = self._resolve_action_mask()
+
+            info = {
+                "action_mask": np.asarray(action_mask, dtype=bool),
+                "raw_state": self.current_state,
+            }
+            return obs, info
 
         # Signal batch script that training.py is ready for next episode
         redis_bridge.set_episode_ready()
@@ -244,16 +262,56 @@ class SchedulingEnvironment(gym.Env):
             f"tier={tier_name} dc={dc_idx} vm={vm_id}"
         )
 
-        #return action: edge/cloud + data center id + vm id
-        return {
+        # Include warm-up reward bounds after calibration so Java can use the
+        # same normalization constants that PPO trains on.
+        action_json = {
             "tier": tier_name,
             "datacenterId": int(dc_idx),
             "vmId": int(vm_id), 
             "actionIndex": int(action)
         }
+
+        if self.reward_bounds is not None:
+            action_json["rewardBounds"] = {
+                "normalization": self.reward_bounds["normalization"],
+                "latencyMinMs": self.reward_bounds["latency_low"],
+                "latencyMaxMs": self.reward_bounds["latency_high"],
+                "latencyMeanMs": self.reward_bounds["latency_mean"],
+                "latencyStdMs": self.reward_bounds["latency_std"],
+                "costMin": self.reward_bounds["cost_low"],
+                "costMax": self.reward_bounds["cost_high"],
+                "costMean": self.reward_bounds["cost_mean"],
+                "costStd": self.reward_bounds["cost_std"],
+            }
+
+        return action_json
     
     def _get_info(self):
         return self.current_info
+
+    def set_reward_bounds(
+        self,
+        latency_low,
+        latency_high,
+        cost_low,
+        cost_high,
+        normalization="minmax",
+        latency_mean=0.0,
+        latency_std=1.0,
+        cost_mean=0.0,
+        cost_std=1.0,
+    ):
+        self.reward_bounds = {
+            "normalization": normalization,
+            "latency_low": float(latency_low),
+            "latency_high": float(latency_high),
+            "latency_mean": float(latency_mean),
+            "latency_std": float(latency_std),
+            "cost_low": float(cost_low),
+            "cost_high": float(cost_high),
+            "cost_mean": float(cost_mean),
+            "cost_std": float(cost_std),
+        }
     
     def render(self):
         pass
