@@ -13,10 +13,11 @@ public class ClusterState {
         public double mips;
         public double freeMemoryMb;
         public double freeGpuMemoryMb;
-        public int queuedTaskCount;
-        public double totalQueueWaitTimeMs; // Estimate for pending tasks
+        public int queuedTaskCount; //0 if vm is available, 1 if unavailable
         public double estimatedAvailableTimeMs; // Estimated sim time when this VM is free
         public double estimatedWaitTimeMs; // Estimated wait from current time until this VM is free
+        public double estimatedUploadDelayMs;
+        public double estimatedDownloadDelayMs;
         public double costPerBw;
         public double costPerSec;
 
@@ -28,9 +29,10 @@ public class ClusterState {
             this.freeMemoryMb = Double.MAX_VALUE;
             this.freeGpuMemoryMb = Double.MAX_VALUE;
             this.queuedTaskCount = 0;
-            this.totalQueueWaitTimeMs = 0;
             this.estimatedAvailableTimeMs = 0;
             this.estimatedWaitTimeMs = 0;
+            this.estimatedUploadDelayMs = 0;
+            this.estimatedDownloadDelayMs = 0;
             this.costPerBw = 0;
             this.costPerSec = 0;
         }

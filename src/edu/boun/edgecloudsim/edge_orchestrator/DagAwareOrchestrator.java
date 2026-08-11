@@ -8,6 +8,7 @@ import edu.boun.edgecloudsim.dagsim.DagRuntimeManager;
 import edu.boun.edgecloudsim.dagsim.scheduling.*;
 import edu.boun.edgecloudsim.cloud_server.CloudVM;
 import edu.boun.edgecloudsim.edge_server.EdgeVM;
+import edu.boun.edgecloudsim.network.NetworkModel;
 import org.cloudbus.cloudsim.core.CloudSim;
 
 import java.util.List;
@@ -115,14 +116,20 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         context.currentTimeMs = CloudSim.clock() * 1000.0;
 
         // Build Cluster State snippet
-        ClusterState state = buildClusterStateSnapshot();
+        ClusterState state = buildClusterStateSnapshot(task);
 
         return schedulingPolicy.decide(context, state);
     }
 
     public static ClusterState buildClusterStateSnapshot() {
+        return buildClusterStateSnapshot(null);
+    }
+
+    //take in task, 
+    public static ClusterState buildClusterStateSnapshot(Task task) {
         ClusterState state = new ClusterState(CloudSim.clock() * 1000.0);
         DagRuntimeManager drm = DagRuntimeManager.getInstance();
+        NetworkModel networkModel = SimManager.getInstance().getNetworkModel();
 
         // Populate VMs based on EdgeServerManager and CloudServerManager
         int numEdgeDcs = SimSettings.getInstance().getNumOfEdgeDatacenters();
@@ -134,15 +141,16 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
             List<EdgeVM> edgeVms = SimManager.getInstance().getEdgeServerManager().getVmList(dc);
             state.vms[PlacementDecision.TIER_EDGE][dc] = new ClusterState.VMInfo[edgeVms.size()];
             for (int vmIdx = 0; vmIdx < edgeVms.size(); vmIdx++) {
-                EdgeVM evm = edgeVms.get(vmIdx);
-                ClusterState.VMInfo vmInfo = new ClusterState.VMInfo(evm.getId(), dc, PlacementDecision.TIER_EDGE, evm.getMips());
-                vmInfo.queuedTaskCount = evm.getCloudletScheduler().getCloudletExecList().size();
+                EdgeVM curEdgeVm = edgeVms.get(vmIdx);
+                ClusterState.VMInfo vmInfo = new ClusterState.VMInfo(curEdgeVm.getId(), dc, PlacementDecision.TIER_EDGE, curEdgeVm.getMips());
+                vmInfo.queuedTaskCount = curEdgeVm.getCloudletScheduler().getCloudletExecList().size();
                 if (drm != null) {
-                    int vmDatacenterId = evm.getHost().getDatacenter().getId();
-                    vmInfo.estimatedAvailableTimeMs = drm.getEstimatedAvailableVmTimeMs(vmDatacenterId, evm.getId());
+                    int vmDatacenterId = curEdgeVm.getHost().getDatacenter().getId();
+                    vmInfo.estimatedAvailableTimeMs = drm.getEstimatedAvailableVmTimeMs(vmDatacenterId, curEdgeVm.getId());
                     vmInfo.estimatedWaitTimeMs = Math.max(0.0, vmInfo.estimatedAvailableTimeMs - state.currentTimeMs);
                 }
-                applyDatacenterCosts(vmInfo, evm.getHost().getDatacenter().getId());
+                applyNetworkDelays(vmInfo, task, networkModel, SimSettings.GENERIC_EDGE_DEVICE_ID, curEdgeVm.getHost().getDatacenter().getId());
+                applyDatacenterCosts(vmInfo, curEdgeVm.getHost().getDatacenter().getId());
                 state.vms[PlacementDecision.TIER_EDGE][dc][vmIdx] = vmInfo;
             }
         }
@@ -152,22 +160,34 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
         List<CloudVM> cloudVms = SimManager.getInstance().getCloudServerManager().getVmList(0);
         state.vms[PlacementDecision.TIER_CLOUD][0] = new ClusterState.VMInfo[cloudVms.size()];
         for (int vmIdx = 0; vmIdx < cloudVms.size(); vmIdx++) {
-            CloudVM cvm = cloudVms.get(vmIdx);
-            ClusterState.VMInfo vmInfo = new ClusterState.VMInfo(cvm.getId(), 0, PlacementDecision.TIER_CLOUD, cvm.getMips());
-            vmInfo.queuedTaskCount = cvm.getCloudletScheduler().getCloudletExecList().size();
+            CloudVM curCloudVm = cloudVms.get(vmIdx);
+            ClusterState.VMInfo vmInfo = new ClusterState.VMInfo(curCloudVm.getId(), 0, PlacementDecision.TIER_CLOUD, curCloudVm.getMips());
+            vmInfo.queuedTaskCount = curCloudVm.getCloudletScheduler().getCloudletExecList().size();
             if (drm != null) {
-                vmInfo.estimatedAvailableTimeMs = drm.getEstimatedAvailableVmTimeMs(SimSettings.CLOUD_DATACENTER_ID, cvm.getId());
+                vmInfo.estimatedAvailableTimeMs = drm.getEstimatedAvailableVmTimeMs(SimSettings.CLOUD_DATACENTER_ID, curCloudVm.getId());
                 vmInfo.estimatedWaitTimeMs = Math.max(0.0, vmInfo.estimatedAvailableTimeMs - state.currentTimeMs);
             }
-            applyDatacenterCosts(vmInfo, cvm.getHost().getDatacenter().getId());
+            applyNetworkDelays(vmInfo, task, networkModel, SimSettings.CLOUD_DATACENTER_ID, SimSettings.CLOUD_DATACENTER_ID);
+            applyDatacenterCosts(vmInfo, curCloudVm.getHost().getDatacenter().getId());
             state.vms[PlacementDecision.TIER_CLOUD][0][vmIdx] = vmInfo;
         }
 
         return state;
     }
 
-    private static void applyDatacenterCosts(ClusterState.VMInfo vmInfo, int actualDatacenterId) {
-        Double[] costs = SimSettings.datacenterCosts.get(actualDatacenterId);
+    //helper to get estimated delays of vm at current sim time
+    private static void applyNetworkDelays(ClusterState.VMInfo vmInfo, Task task, NetworkModel networkModel, int uploadDestId, int downloadSourceId) {
+        if (task == null || networkModel == null) {
+            return;
+        }
+
+        vmInfo.estimatedUploadDelayMs = networkModel.getUploadDelay(task.getMobileDeviceId(), uploadDestId, task) * 1000.0;
+        vmInfo.estimatedDownloadDelayMs = networkModel.getDownloadDelay(downloadSourceId, task.getMobileDeviceId(), task) * 1000.0;
+    }
+
+    //helper to fill in the cost values of vm at the time of schedule
+    private static void applyDatacenterCosts(ClusterState.VMInfo vmInfo, int datacenterId) {
+        Double[] costs = SimSettings.datacenterCosts.get(datacenterId);
         if (costs == null) {
             return;
         }
