@@ -18,6 +18,7 @@ public class ClusterState {
         public double estimatedWaitTimeMs; // Estimated wait from current time until this VM is free
         public double estimatedUploadDelayMs;
         public double estimatedDownloadDelayMs;
+        public double estimatedProcessingTimeMs;
         public double costPerBw;
         public double costPerSec;
 
@@ -33,6 +34,7 @@ public class ClusterState {
             this.estimatedWaitTimeMs = 0;
             this.estimatedUploadDelayMs = 0;
             this.estimatedDownloadDelayMs = 0;
+            this.estimatedProcessingTimeMs = 0;
             this.costPerBw = 0;
             this.costPerSec = 0;
         }

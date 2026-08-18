@@ -150,6 +150,7 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
                     vmInfo.estimatedWaitTimeMs = Math.max(0.0, vmInfo.estimatedAvailableTimeMs - state.currentTimeMs);
                 }
                 applyNetworkDelays(vmInfo, task, networkModel, SimSettings.GENERIC_EDGE_DEVICE_ID, curEdgeVm.getHost().getDatacenter().getId());
+                applyProcessingTime(vmInfo, task);
                 applyDatacenterCosts(vmInfo, curEdgeVm.getHost().getDatacenter().getId());
                 state.vms[PlacementDecision.TIER_EDGE][dc][vmIdx] = vmInfo;
             }
@@ -168,6 +169,7 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
                 vmInfo.estimatedWaitTimeMs = Math.max(0.0, vmInfo.estimatedAvailableTimeMs - state.currentTimeMs);
             }
             applyNetworkDelays(vmInfo, task, networkModel, SimSettings.CLOUD_DATACENTER_ID, SimSettings.CLOUD_DATACENTER_ID);
+            applyProcessingTime(vmInfo, task);
             applyDatacenterCosts(vmInfo, curCloudVm.getHost().getDatacenter().getId());
             state.vms[PlacementDecision.TIER_CLOUD][0][vmIdx] = vmInfo;
         }
@@ -183,6 +185,15 @@ public class DagAwareOrchestrator extends EdgeOrchestrator {
 
         vmInfo.estimatedUploadDelayMs = networkModel.getUploadDelay(task.getMobileDeviceId(), uploadDestId, task) * 1000.0;
         vmInfo.estimatedDownloadDelayMs = networkModel.getDownloadDelay(downloadSourceId, task.getMobileDeviceId(), task) * 1000.0;
+    }
+
+    private static void applyProcessingTime(ClusterState.VMInfo vmInfo, Task task) {
+        if (task == null) {
+            return;
+        }
+
+        double maxMips = Math.max(1e-9, vmInfo.mips);
+        vmInfo.estimatedProcessingTimeMs = (task.getCloudletLength() / maxMips) * 1000.0;
     }
 
     //helper to fill in the cost values of vm at the time of schedule

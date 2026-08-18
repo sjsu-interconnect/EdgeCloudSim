@@ -267,6 +267,9 @@ public class RemoteRLPolicy implements SchedulingPolicy {
                         vmObj.addProperty("queueLen", vm.queuedTaskCount);
                         vmObj.addProperty("estimatedAvailableTimeMs", vm.estimatedAvailableTimeMs);
                         vmObj.addProperty("estimatedWaitTimeMs", vm.estimatedWaitTimeMs);
+                        vmObj.addProperty("estimatedUploadDelayMs", vm.estimatedUploadDelayMs);
+                        vmObj.addProperty("estimatedDownloadDelayMs", vm.estimatedDownloadDelayMs);
+                        vmObj.addProperty("estimatedProcessingTimeMs", vm.estimatedProcessingTimeMs);
                         vmObj.addProperty("costPerBw", vm.costPerBw);
                         vmObj.addProperty("costPerSec", vm.costPerSec);
                         totalQueue += vm.queuedTaskCount;
